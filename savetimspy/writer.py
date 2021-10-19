@@ -53,6 +53,7 @@ class SaveTIMS:
         self.src_tims_id = None
         self.tdf_bin = None
         self.sqlcon = None
+        self.srcsqlcon = None
         os.mkdir(path)
         self.opentims = opentims_obj
         self.src_path = opentims_obj.analysis_directory
@@ -63,6 +64,7 @@ class SaveTIMS:
         self.current_frame = 1
         self.tdf_bin = open(self.dst_path / 'analysis.tdf_bin', 'wb')
         self.sqlcon = sqlite3.connect(self.db_path)
+        self.srcsqlcon = sqlite3.connect(self.src_path / 'analysis.tdf')
 
     def close(self):
         if not self.src_tims_id is None:
@@ -79,12 +81,21 @@ class SaveTIMS:
             self.sqlcon.commit()
             self.sqlcon.close()
             self.sqlcon = None
+        if not self.srcsqlcon is None:
+            self.srcsqlcon.close()
+            self.srcsqlcon = None
 
     def __del__(self):
         self.close()
     
 
-    def save_frame(self, mzs, scans, intensities, total_scans):
+    def save_frame(self, mzs, scans, intensities, total_scans, copy_sql = True):
+        if copy_sql:
+            frame_row = list(self.srcsqlcon.execute("SELECT * FROM Frames WHERE Id == ?;", (self.current_frame,)))[0]
+            self.sqlcon.execute("DELETE FROM Frames WHERE Id == ?;", (self.current_frame,));
+            qmarks = ['?'] * len(frame_row)
+            qmarks = ', '.join(qmarks)
+            self.sqlcon.execute("INSERT INTO Frames VALUES (" + qmarks + ")", frame_row)
         frame_start_pos = self.tdf_bin.tell()
         tofs = np.empty(len(mzs), np.double)
         if not isinstance(mzs, np.ndarray):
