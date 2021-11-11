@@ -87,6 +87,9 @@ class SaveTIMS:
 
     def __del__(self):
         self.close()
+
+    def save_frame_dict(self, frame_dict, total_scans, copy_sql = True):
+        return self.save_frame(frame_dict['mz'], frame_dict['scan'], frame_dict['intensity'], total_scans, copy_sql)
     
 
     def save_frame(self, mzs, scans, intensities, total_scans, copy_sql = True):
@@ -104,8 +107,6 @@ class SaveTIMS:
         int_tofs = np.array(tofs, np.uint32)
         tofsdbl = np.array(int_tofs, np.double)
         ctims.tims_index_to_mz(self.src_tims_id, self.current_frame, cast("double*", tofsdbl), cast("double*", mzs), len(mzs))
-        print(int_tofs)
-        print(mzs)
 
         peak_cnts = [len(scans)]
         ii = 0
@@ -119,8 +120,12 @@ class SaveTIMS:
         #peak_cnts.append(0)
         peak_cnts = np.array(peak_cnts, np.uint32)
 
-        last_tof = 0
+        last_tof = -1
+        last_scan = 0
         for ii in range(len(int_tofs)):
+            if last_scan != scans[ii]:
+                last_tof = -1
+                last_scan = scans[ii]
             val = int_tofs[ii]
             int_tofs[ii] = val - last_tof
             last_tof = val
@@ -129,9 +134,7 @@ class SaveTIMS:
             intensities = np.array(intensities, np.uint32)
 
         interleaved = np.vstack([int_tofs, intensities]).transpose().reshape(len(scans)*2)
-        print(interleaved)
         back_data = peak_cnts.tobytes() + interleaved.tobytes()
-        print(np.frombuffer(back_data, np.uint32))
         real_data = bytearray(len(back_data))
 
         reminder = 0
@@ -143,17 +146,13 @@ class SaveTIMS:
             real_data[rd_idx] = back_data[bd_idx]
             bd_idx += 4
 
-        print(np.frombuffer(bytes(real_data), dtype=np.uint32))
         compressed_data = zstd.ZSTD_compress(bytes(real_data), 1)
 
-        print("RDL", len(real_data))
         self.tdf_bin.write((len(compressed_data)+8).to_bytes(4, 'little', signed = False))
-        print(len(compressed_data)+8)
         self.tdf_bin.write(total_scans.to_bytes(4, 'little', signed = False))
-        print("total scans:", total_scans)
         self.tdf_bin.write(compressed_data)
 
-        F = self.sqlcon.execute("UPDATE Frames SET NumScans = ?, NumPeaks = ?, TimsId = ? WHERE Id = ?", (total_scans, len(mzs), frame_start_pos, self.current_frame)).rowcount
+        F = self.sqlcon.execute("UPDATE Frames SET NumScans = ?, NumPeaks = ?, TimsId = ?, AccumulationTime = 100.0 WHERE Id = ?;", (total_scans, len(mzs), frame_start_pos, self.current_frame)).rowcount
         self.sqlcon.commit()
         self.current_frame += 1
 
