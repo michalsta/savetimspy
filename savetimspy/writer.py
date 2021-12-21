@@ -92,7 +92,7 @@ class SaveTIMS:
         return self.save_frame(frame_dict['mz'], frame_dict['scan'], frame_dict['intensity'], total_scans, copy_sql)
     
 
-    def save_frame(self, mzs, scans, intensities, total_scans, copy_sql = True):
+    def save_frame(self, scans, mzs, intensities, total_scans, copy_sql = True):
         if copy_sql:
             frame_row = list(self.srcsqlcon.execute("SELECT * FROM Frames WHERE Id == ?;", (self.current_frame,)))[0]
             self.sqlcon.execute("DELETE FROM Frames WHERE Id == ?;", (self.current_frame,));

@@ -24,5 +24,5 @@ for frame_id in list(db.execute("SELECT Frame FROM DiaFrameMsMsInfo WHERE Window
     frame_id = frame_id[0]
     D = ot.query(frame_id)
     n_scans = list(db.execute("SELECT NumScans FROM Frames WHERE Id == ?", (frame_id,)))[0][0]
-    s.save_frame(D['mz'], D['scan'], D['intensity'], n_scans)
+    s.save_frame(D['scan'], D['mz'], D['intensity'], n_scans)
 
