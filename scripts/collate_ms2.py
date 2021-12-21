@@ -3,12 +3,15 @@ import sqlite3
 import argparse
 from pathlib import Path
 import shutil
+from tqdm import tqdm
 from collections import Counter, defaultdict
 
 
 parser = argparse.ArgumentParser(description="Flatten a group of scans")
-parser.add_argument("src", metavar="<source.d>", type=Path)
-parser.add_argument("dst", metavar="<destination.d>", type=Path)
+parser.add_argument("src", metavar="<source.d>", type=Path, help="Source TDF directory")
+parser.add_argument("dst", metavar="<destination.d>", type=Path, help="Output directory")
+parser.add_argument("-s", "--silent", action="store_true", help="Silent (do not show progressbar)")
+parser.add_argument("-f", "--force", action="store_true", help="Delete the target directory if it exists")
 args = parser.parse_args()
 
 from opentimspy import OpenTIMS
@@ -17,9 +20,13 @@ from savetimspy import SaveTIMS
 
 assert args.src.is_dir()
 
+progressbar = (lambda x: x) if args.silent else tqdm
 
 ot = OpenTIMS(args.src)
-shutil.rmtree(args.dst)
+
+if args.force:
+    shutil.rmtree(args.dst, ignore_errors=True)
+
 s = SaveTIMS(ot, args.dst)
 db = sqlite3.connect(args.src / 'analysis.tdf')
 
@@ -37,7 +44,7 @@ max_frame = max(groups.keys())
 
 collected = None
 
-for frame_id in range(1, max_frame+2):
+for frame_id in progressbar(range(1, max_frame+2)):
     if not frame_id in groups:
         if collected is not None:
             collected.sort()
@@ -49,6 +56,5 @@ for frame_id in range(1, max_frame+2):
         D = ot.query(frame_id)
         n_scans = frame_to_scans[frame_id]
         collected.extend(zip(D['scan'], D['mz'], D['intensity']))
-
 
 
