@@ -65,6 +65,7 @@ class SaveTIMS:
         self.tdf_bin = open(self.dst_path / 'analysis.tdf_bin', 'wb')
         self.sqlcon = sqlite3.connect(self.db_path)
         self.srcsqlcon = sqlite3.connect(self.src_path / 'analysis.tdf')
+        self.sqlcon.execute("DELETE FROM Frames;")
         self.compression_level = compression_level
 
     def close(self):
@@ -113,8 +114,9 @@ class SaveTIMS:
                 src_frame = self.current_frame
             else:
                 src_frame = copy_sql
-            frame_row = list(self.srcsqlcon.execute("SELECT * FROM Frames WHERE Id == ?;", (self.current_frame,)))[0]
-            self.sqlcon.execute("DELETE FROM Frames WHERE Id == ?;", (self.current_frame,));
+            frame_row = list(self.srcsqlcon.execute("SELECT * FROM Frames WHERE Id == ?;", (src_frame,)))[0]
+            frame_row = list(frame_row)
+            frame_row[0] = self.current_frame
             qmarks = ['?'] * len(frame_row)
             qmarks = ', '.join(qmarks)
             self.sqlcon.execute("INSERT INTO Frames VALUES (" + qmarks + ")", frame_row)
