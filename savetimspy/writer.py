@@ -49,7 +49,7 @@ def get_err():
     return ''.join(x.decode() for x in s)
 
 class SaveTIMS:
-    def __init__(self, opentims_obj, path):
+    def __init__(self, opentims_obj, path, compression_level = 1):
         self.src_tims_id = None
         self.tdf_bin = None
         self.sqlcon = None
@@ -65,6 +65,7 @@ class SaveTIMS:
         self.tdf_bin = open(self.dst_path / 'analysis.tdf_bin', 'wb')
         self.sqlcon = sqlite3.connect(self.db_path)
         self.srcsqlcon = sqlite3.connect(self.src_path / 'analysis.tdf')
+        self.compression_level = compression_level
 
     def close(self):
         if not self.src_tims_id is None:
@@ -95,7 +96,9 @@ class SaveTIMS:
         self.close()
 
     def save_frame_dict(self, frame_dict, total_scans, copy_sql = True):
-        return self.save_frame(frame_dict['mz'], frame_dict['scan'], frame_dict['intensity'], total_scans, copy_sql)
+        if 'tof' in frame_dict:
+            return self.save_frame_tof(frame_dict['scan'], frame_dict['tof'], frame_dict['intensity'], total_scans, copy_sql)
+        return self.save_frame(frame_dict['scan'], frame_dict['mz'], frame_dict['intensity'], total_scans, copy_sql)
     
     def save_frame(self, scans, mzs, intensities, total_scans, copy_sql = True):
         tofs = np.empty(len(mzs), np.double)
@@ -153,7 +156,7 @@ class SaveTIMS:
             real_data[rd_idx] = back_data[bd_idx]
             bd_idx += 4
 
-        compressed_data = zstd.ZSTD_compress(bytes(real_data), 1)
+        compressed_data = zstd.ZSTD_compress(bytes(real_data), self.compression_level)
 
         self.tdf_bin.write((len(compressed_data)+8).to_bytes(4, 'little', signed = False))
         self.tdf_bin.write(total_scans.to_bytes(4, 'little', signed = False))
