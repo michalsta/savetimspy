@@ -37,9 +37,9 @@ assert not dst.exists()
 
 with OpenTIMS(src) as ot, SaveTIMS(ot, dst) as s, sqlite3.connect(src / 'analysis.tdf') as db:
     for frame in frames:
-        D = ot.query(frame)
+        D = ot.query(frame, columns = "scan tof intensity".split())
         n_scans = list(db.execute("SELECT NumScans FROM Frames WHERE Id == ?", (frame,)))[0][0]
-        s.save_frame(D['scan'], D['mz'], D['intensity'], n_scans)
+        s.save_frame_tofs(D['scan'], D['tof'], D['intensity'], n_scans)
 
 if args.ms1:
     with sqlite3.connect(dst / 'analysis.tdf'):
