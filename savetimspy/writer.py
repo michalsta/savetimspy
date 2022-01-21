@@ -88,6 +88,12 @@ class SaveTIMS:
     def __del__(self):
         self.close()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.close()
+
     def save_frame_dict(self, frame_dict, total_scans, copy_sql = True):
         return self.save_frame(frame_dict['mz'], frame_dict['scan'], frame_dict['intensity'], total_scans, copy_sql)
     
