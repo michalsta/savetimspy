@@ -97,8 +97,14 @@ class SaveTIMS:
     def save_frame_dict(self, frame_dict, total_scans, copy_sql = True):
         return self.save_frame(frame_dict['mz'], frame_dict['scan'], frame_dict['intensity'], total_scans, copy_sql)
     
-
     def save_frame(self, scans, mzs, intensities, total_scans, copy_sql = True):
+        tofs = np.empty(len(mzs), np.double)
+        if not isinstance(mzs, np.ndarray):
+            mzs = np.array(mzs, np.double)
+        ctims.tims_mz_to_index(self.src_tims_id, self.current_frame, cast("double*", mzs), cast("double*", tofs), len(mzs))
+        return self.save_frame_tofs(scans, np.array(tofs, np.uint32), intensities, total_scans, copy_sql=copy_sql)
+
+    def save_frame_tofs(self, scans, tofs, intensities, total_scans, copy_sql = True):
         if copy_sql:
             frame_row = list(self.srcsqlcon.execute("SELECT * FROM Frames WHERE Id == ?;", (self.current_frame,)))[0]
             self.sqlcon.execute("DELETE FROM Frames WHERE Id == ?;", (self.current_frame,));
@@ -106,13 +112,8 @@ class SaveTIMS:
             qmarks = ', '.join(qmarks)
             self.sqlcon.execute("INSERT INTO Frames VALUES (" + qmarks + ")", frame_row)
         frame_start_pos = self.tdf_bin.tell()
-        tofs = np.empty(len(mzs), np.double)
-        if not isinstance(mzs, np.ndarray):
-            mzs = np.array(mzs, np.double)
-        ctims.tims_mz_to_index(self.src_tims_id, self.current_frame, cast("double*", mzs), cast("double*", tofs), len(mzs))
-        int_tofs = np.array(tofs, np.uint32)
-        tofsdbl = np.array(int_tofs, np.double)
-        ctims.tims_index_to_mz(self.src_tims_id, self.current_frame, cast("double*", tofsdbl), cast("double*", mzs), len(mzs))
+        if not isinstance(tofs, np.ndarray):
+            tofs = np.array(tofs, np.uint32)
 
         peak_cnts = [len(scans)]
         ii = 0
@@ -128,18 +129,18 @@ class SaveTIMS:
 
         last_tof = -1
         last_scan = 0
-        for ii in range(len(int_tofs)):
+        for ii in range(len(tofs)):
             if last_scan != scans[ii]:
                 last_tof = -1
                 last_scan = scans[ii]
-            val = int_tofs[ii]
-            int_tofs[ii] = val - last_tof
+            val = tofs[ii]
+            tofs[ii] = val - last_tof
             last_tof = val
 
         if not isinstance(intensities, np.ndarray) or not intensities.dtype == np.uint32:
             intensities = np.array(intensities, np.uint32)
 
-        interleaved = np.vstack([int_tofs, intensities]).transpose().reshape(len(scans)*2)
+        interleaved = np.vstack([tofs, intensities]).transpose().reshape(len(scans)*2)
         back_data = peak_cnts.tobytes() + interleaved.tobytes()
         real_data = bytearray(len(back_data))
 
@@ -158,7 +159,7 @@ class SaveTIMS:
         self.tdf_bin.write(total_scans.to_bytes(4, 'little', signed = False))
         self.tdf_bin.write(compressed_data)
 
-        F = self.sqlcon.execute("UPDATE Frames SET NumScans = ?, NumPeaks = ?, TimsId = ?, AccumulationTime = 100.0 WHERE Id = ?;", (total_scans, len(mzs), frame_start_pos, self.current_frame)).rowcount
+        F = self.sqlcon.execute("UPDATE Frames SET NumScans = ?, NumPeaks = ?, TimsId = ?, AccumulationTime = 100.0 WHERE Id = ?;", (total_scans, len(tofs), frame_start_pos, self.current_frame)).rowcount
         self.sqlcon.commit()
         self.current_frame += 1
 
