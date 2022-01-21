@@ -108,7 +108,11 @@ class SaveTIMS:
         return self.save_frame_tofs(scans, np.array(tofs, np.uint32), intensities, total_scans, copy_sql=copy_sql)
 
     def save_frame_tofs(self, scans, tofs, intensities, total_scans, copy_sql = True):
-        if copy_sql:
+        if copy_sql == True or isinstance(copy_sql, int):
+            if copy_sql == True:
+                src_frame = self.current_frame
+            else:
+                src_frame = copy_sql
             frame_row = list(self.srcsqlcon.execute("SELECT * FROM Frames WHERE Id == ?;", (self.current_frame,)))[0]
             self.sqlcon.execute("DELETE FROM Frames WHERE Id == ?;", (self.current_frame,));
             qmarks = ['?'] * len(frame_row)

@@ -22,7 +22,7 @@ db = sqlite3.connect(src / 'analysis.tdf')
 
 for frame_id in list(db.execute("SELECT Frame FROM DiaFrameMsMsInfo WHERE WindowGroup == ?;", (group,))):
     frame_id = frame_id[0]
-    D = ot.query(frame_id)
+    D = ot.query(frame_id, columns='scan tof intensity'.split())
     n_scans = list(db.execute("SELECT NumScans FROM Frames WHERE Id == ?", (frame_id,)))[0][0]
-    s.save_frame(D['scan'], D['mz'], D['intensity'], n_scans)
+    s.save_frame_dict(D, n_scans)
 

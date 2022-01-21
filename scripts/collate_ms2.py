@@ -48,13 +48,14 @@ for frame_id in progressbar(range(1, max_frame+2)):
     if not frame_id in groups:
         if collected is not None:
             collected.sort()
-            scan, mz, intens = zip(*collected)
-            s.save_frame(scan, mz, intens, frame_to_scans[frame_id-1])
+            scan, tof, intens = zip(*collected)
+            s.save_frame_tofs(scan, tof, intens, frame_to_scans[frame_id-1], copy_sql=ms1_id)
             pass
+        ms1_id = frame_id
         collected = []
     else:
-        D = ot.query(frame_id)
+        D = ot.query(frame_id, columns="scan tof intensity".split())
         n_scans = frame_to_scans[frame_id]
-        collected.extend(zip(D['scan'], D['mz'], D['intensity']))
+        collected.extend(zip(D['scan'], D['tof'], D['intensity']))
 
 
