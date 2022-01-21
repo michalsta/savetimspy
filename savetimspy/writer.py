@@ -118,11 +118,11 @@ class SaveTIMS:
         if not isinstance(tofs, np.ndarray):
             tofs = np.array(tofs, np.uint32)
 
-        peak_cnts = [len(scans)]
+        peak_cnts = [total_scans]
         ii = 0
-        for scan_id in range(total_scans-1):
+        for scan_id in range(1, total_scans):
             counter = 0
-            while ii < len(scans) and scans[ii] <= scan_id:
+            while ii < len(scans) and scans[ii] < scan_id:
                 ii += 1
                 counter += 1
             peak_cnts.append(counter*2)
