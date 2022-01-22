@@ -59,15 +59,19 @@ collected = None
 ms1_id = -1
 cycle_id = 0
 
-total_count = max_frame+1 if len(cycles)==0 else len(cycles)
+if not args.silent:
+    total_count = max_frame+1 if len(cycles)==0 else len(cycles)
+    progress_tqdm = tqdm(total=total_count)
 
-for frame_id in progressbar(range(1, max_frame+2), total=total_count):
+for frame_id in range(1, max_frame+2):
     if not frame_id in groups:
         if collected is not None:
             if extract_cycle(cycle_id):
                 collected.sort()
                 scan, tof, intens = zip(*collected)
                 s.save_frame_tofs(scan, tof, intens, frame_to_scans[frame_id-1], copy_sql=ms1_id)
+                if not args.silent:
+                    progress_tqdm.update()
             cycle_id += 1
         ms1_id = frame_id
         collected = []
