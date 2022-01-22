@@ -71,7 +71,7 @@ cflags = get_cflags
 setup(
     name='savetimspy',
     packages=['savetimspy'],
-    version='0.0.1',
+    version='0.0.2',
     author='Mateusz Krzysztof Łącki (MatteoLacki), Michał Startek (michalsta)',
     author_email='matteo.lacki@gmail.com, michal.startek@mimuw.edu.pl',
     description='opentimspy: An writer of Bruker Tims Data File (.tdf).',
@@ -86,5 +86,6 @@ setup(
              'Programming Language :: Python :: 3.9'],
     zip_safe=False,
     setup_requires=[],
-    install_requires=['cffi', 'zstd', 'numpy', 'opentimspy[bruker_proprietary]'],
+    install_requires=['cffi', 'zstd', 'numpy', 'opentimspy[bruker_proprietary]', 'tqdm'],
+    scripts=['scripts/collate_ms2.py', 'scripts/get_frames.py'],
 )
