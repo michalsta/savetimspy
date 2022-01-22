@@ -59,8 +59,9 @@ collected = None
 ms1_id = -1
 cycle_id = 0
 
+total_count = max_frame+1 if len(cycles)=0 else len(cycles)
 
-for frame_id in progressbar(range(1, max_frame+2)):
+for frame_id in progressbar(range(1, max_frame+2), total=total_count):
     if not frame_id in groups:
         if collected is not None:
             if extract_cycle(cycle_id):
