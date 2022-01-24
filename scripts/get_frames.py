@@ -9,8 +9,8 @@ from savetimspy import SaveTIMS
 
 import argparse
 parser = argparse.ArgumentParser(description='Extract a set of frames from a TDF dataset.')
-parser.add_argument("in_p", help="source path")
-parser.add_argument("out_p", help="destination path")
+parser.add_argument("in_p", metavar="<source.d>", help="source path")
+parser.add_argument("out_p", metavar="<destination.d>", help="destination path")
 parser.add_argument("frames", help="comma-separated list of frames to extract. May contain ranges. Example: 314,317-320,350")
 parser.add_argument("--force", "-f", help="force overwriting of the target path if it exists", action='store_true')
 parser.add_argument("--ms1", help="mark all frames as ms1", action='store_true')
