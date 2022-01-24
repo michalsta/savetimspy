@@ -47,5 +47,5 @@ with OpenTIMS(src) as ot, SaveTIMS(ot, dst, 9) as s, sqlite3.connect(src / 'anal
         s.save_frame_tofs(D['scan'], D['tof'], D['intensity'], n_scans)
 
 if args.ms1:
-    with sqlite3.connect(dst / 'analysis.tdf'):
-        db.execute("UPDATE Frames set MsMsType=0;")
+    with sqlite3.connect(dst / 'analysis.tdf') as dst_db:
+        dst_db.execute("UPDATE Frames set MsMsType=0;")
