@@ -6,6 +6,7 @@ import sqlite3
 import numpy as np
 import zstd
 import opentims_bruker_bridge
+from savetimspy.numba_helper import deduplicate
 
 
 so_path = opentims_bruker_bridge.get_appropriate_so_path()
@@ -121,6 +122,9 @@ class SaveTIMS:
             qmarks = ', '.join(qmarks)
             self.sqlcon.execute("INSERT INTO Frames VALUES (" + qmarks + ")", frame_row)
         frame_start_pos = self.tdf_bin.tell()
+
+        scans, tofs, intensities = deduplicate(scans, tofs, intensities)
+
         if not isinstance(tofs, np.ndarray):
             tofs = np.array(tofs, np.uint32)
 
