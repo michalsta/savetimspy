@@ -125,9 +125,6 @@ class SaveTIMS:
 
         scans, tofs, intensities = deduplicate(scans, tofs, intensities)
 
-        if not isinstance(tofs, np.ndarray):
-            tofs = np.array(tofs, np.uint32)
-
         peak_cnts = [total_scans]
         ii = 0
         for scan_id in range(1, total_scans):
@@ -181,7 +178,15 @@ class SaveTIMS:
                                         AccumulationTime = 100.0
                                     WHERE
                                         Id = ?;""",
-                                (total_scans, len(tofs), frame_start_pos, np.max(intensities), np.sum(intensities), self.current_frame)).rowcount
+                                (
+                                    total_scans,
+                                    len(tofs),
+                                    frame_start_pos,
+                                    0 if len(intensities) == 0
+                                    else int(np.max(intensities)),
+                                    int(np.sum(intensities)),
+                                    self.current_frame)
+                                ).rowcount
         self.sqlcon.commit()
         self.current_frame += 1
 
