@@ -4,6 +4,7 @@ import sqlite3
 import argparse
 from pathlib import Path
 import shutil
+import numpy as np
 from tqdm import tqdm
 from collections import Counter, defaultdict
 from opentimspy import OpenTIMS
@@ -68,8 +69,10 @@ for frame_id in range(1, max_frame+2):
     if not frame_id in groups:
         if collected is not None:
             if extract_cycle(cycle_id):
-                collected.sort()
                 scan, tof, intens = zip(*collected)
+                scan = np.concatenate(scan)
+                tof = np.concatenate(tof)
+                intens = np.concatenate(intens)
                 s.save_frame_tofs(scan, tof, intens, frame_to_scans[frame_id-1], copy_sql=ms1_id)
                 if not args.silent:
                     progress_tqdm.update()
@@ -80,4 +83,4 @@ for frame_id in range(1, max_frame+2):
         if extract_cycle(cycle_id):
             D = ot.query(frame_id, columns="scan tof intensity".split())
             n_scans = frame_to_scans[frame_id]
-            collected.extend(zip(D['scan'], D['tof'], D['intensity']))
+            collected.append((D['scan'], D['tof'], D['intensity']))
