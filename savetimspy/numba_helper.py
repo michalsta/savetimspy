@@ -19,5 +19,6 @@ def deduplicate(scans, tofs, intensities):
         ret_scans[idx] = scan
         ret_tofs[idx] = tof
         ret_intensities[idx] = intens
+        idx += 1
 
     return ret_scans, ret_tofs, ret_intensities
