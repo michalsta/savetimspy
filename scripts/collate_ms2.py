@@ -43,7 +43,7 @@ frame_to_scans = {}
 for frame, scans in db.execute("SELECT Id, NumScans FROM Frames;"):
     frame_to_scans[int(frame)] = int(scans)
 
-max_frame = max(groups.keys())
+max_frame = max(frame_to_scans.keys())
 
 collected = None
 
@@ -54,7 +54,7 @@ if not args.silent:
     try:
         total_count = len(args.cycles)
     except TypeError:
-        total_count = max_frame+1
+        total_count = max_frame//21
     progress_tqdm = tqdm(total=total_count)
 
 for frame_id in range(1, max_frame+2):
