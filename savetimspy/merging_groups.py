@@ -137,3 +137,9 @@ def save_moving_k_mer_MIDIA_diagonals(
             )
             n_scans = max(frame2scans[gr] for gr in group_indices)
             savetims.save_frame_dict(D, n_scans)
+    if verbose:
+        print("Thank you for extracting with savetimspy.")
+        print("Have a nice day.")
+        print("Have a nice day.")
+        print("Have a nice day.")
+        print("Buahahahaha!!!")
