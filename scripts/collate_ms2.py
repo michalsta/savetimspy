@@ -18,6 +18,7 @@ parser.add_argument("dst", metavar="<destination.d>", type=Path, help="Output di
 parser.add_argument("-s", "--silent", action="store_true", help="Silent (do not show progressbar)")
 parser.add_argument("-f", "--force", action="store_true", help="Delete the target directory if it exists")
 parser.add_argument("-c", "--cycles", help="Comma-separated list MIDIA cycles or cycle ranges to extract. Example: 314,340-350,356. Extract everything if omitted.", type=int_set, default=int_set(None))
+parser.add_argument("--steps", help="Comma-separated list of MIDIA steps from each cycle to extract. Example: 0,5,8-14,17,19. Will use all MIDIA steps present if omitted", type=int_set, default=int_set(None))
 args = parser.parse_args()
 
 assert args.src.is_dir()
@@ -72,7 +73,7 @@ for frame_id in range(1, max_frame+2):
         ms1_id = frame_id
         collected = []
     else:
-        if cycle_id in args.cycles:
+        if cycle_id in args.cycles and (groups[frame_id]-1) in args.steps:
             D = ot.query(frame_id, columns="scan tof intensity".split())
             n_scans = frame_to_scans[frame_id]
             collected.append((D['scan'], D['tof'], D['intensity']))

@@ -19,6 +19,6 @@ def int_set(description):
             start, end = desc.split('-')
             ret.update(range(int(start), int(end)+1))
         else:
-            ret.add(int(cycle_desc))
+            ret.add(int(desc))
 
     return ret
