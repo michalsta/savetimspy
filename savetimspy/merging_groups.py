@@ -33,21 +33,25 @@ def iter_consecutive_int_k_mers(
 
 
 
-def unequal_zip(*lst_of_iterables: Iterable[Any]) -> Iterator[List[Any]]:
+def unequal_zip(
+    *lst_of_iterables: Iterable[Any]
+) -> Iterator[List[Any]]:
     """zip iterables of unequal sizes into tuples of potentially different length.
 
     Motivation: while zipping unequal lists the result is cut to the length of the shortest list.
     Here we do the oposite: we continue supplying tuples with different sizes until all lists are emptied.
 
     """
-    lst_of_iterables = [iter(it) for it in lst_of_iterables]
-    while lst_of_iterables:
+    iterables = {
+        i: iter(it) for i, it in enumerate(lst_of_iterables)
+    }
+    while iterables:
         curr_zip = []
-        for iterable_num, iterable in enumerate(lst_of_iterables.copy()):
+        for iterable_num, iterable in iterables.copy().items():
             try:
                 curr_zip.append(next(iterable))
             except StopIteration:
-                del lst_of_iterables[iterable_num]
+                del iterables[iterable_num]
         if curr_zip:
             yield curr_zip
         else:
@@ -111,10 +115,15 @@ def save_moving_k_mer_MIDIA_diagonals(
     }
     destination_folder = pathlib.Path(destination_folder)
     destination_folder.mkdir(parents=True)
-    group_frames_to_merge = iter_window_groups_k_mers_and_frames(
+    group_frames_to_merge = list(iter_window_groups_k_mers_and_frames(
         rawdata=rawdata,
         group_overlap=group_overlap,
-    )
+    ))
+    if verbose:
+        print("Welcome!")
+        print(f"We are going to extract MS2 MIDIA cycles in groups of {group_overlap}.")
+        print("The following groups will be considered:")
+        print([g for g,_ in group_frames_to_merge])
     for group_indices, frames_to_merge in group_frames_to_merge:
         destination_subfolder = destination_folder/("MIDIA_"+"_".join(str(g) for g in group_indices) + ".d")
         savetims = SaveTIMS(rawdata, destination_subfolder)
