@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 from opentimspy import OpenTIMS
 from savetimspy import SaveTIMS
+from tqdm import tqdm
 
 if len(sys.argv) != 4:
     print(
@@ -20,9 +21,12 @@ shutil.rmtree(dst)
 s = SaveTIMS(ot, dst)
 db = sqlite3.connect(src / 'analysis.tdf')
 
-for frame_id in list(db.execute("SELECT Frame FROM DiaFrameMsMsInfo WHERE WindowGroup == ?;", (group,))):
+for frame_id in tqdm(list(db.execute("SELECT Frame FROM DiaFrameMsMsInfo WHERE WindowGroup == ?;", (group,)))):
     frame_id = frame_id[0]
     D = ot.query(frame_id, columns='scan tof intensity'.split())
     n_scans = list(db.execute("SELECT NumScans FROM Frames WHERE Id == ?", (frame_id,)))[0][0]
     s.save_frame_dict(D, n_scans)
+
+
+
 

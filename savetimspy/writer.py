@@ -99,7 +99,7 @@ class SaveTIMS:
 
     def save_frame_dict(self, frame_dict, total_scans, copy_sql = True):
         if 'tof' in frame_dict:
-            return self.save_frame_tof(frame_dict['scan'], frame_dict['tof'], frame_dict['intensity'], total_scans, copy_sql)
+            return self.save_frame_tofs(frame_dict['scan'], frame_dict['tof'], frame_dict['intensity'], total_scans, copy_sql)
         return self.save_frame(frame_dict['scan'], frame_dict['mz'], frame_dict['intensity'], total_scans, copy_sql)
     
     def save_frame(self, scans, mzs, intensities, total_scans, copy_sql = True):

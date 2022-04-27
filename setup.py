@@ -71,12 +71,12 @@ cflags = get_cflags
 setup(
     name='savetimspy',
     packages=['savetimspy'],
-    version='0.0.2',
+    version='0.0.3',
     author='Mateusz Krzysztof Łącki (MatteoLacki), Michał Startek (michalsta)',
     author_email='matteo.lacki@gmail.com, michal.startek@mimuw.edu.pl',
     description='opentimspy: An writer of Bruker Tims Data File (.tdf).',
     long_description='opentimspy: A writer of Bruker Tims Data File (.tdf).',
-    keywords=['timsTOFpro', 'Bruker TDF', 'data science', 'mass spectrometry'],
+    keywords=['timsTOFpro', 'Bruker TDF', 'data science', 'mass spectrometry', 'rock and roll'],
     classifiers=["Development Status :: 4 - Beta",
              'Intended Audience :: Science/Research',
              'Topic :: Scientific/Engineering :: Chemistry',
@@ -87,5 +87,10 @@ setup(
     zip_safe=False,
     setup_requires=[],
     install_requires=['cffi', 'zstd', 'numpy', 'opentimspy[bruker_proprietary]', 'tqdm'],
-    scripts=['scripts/collate_ms2.py', 'scripts/get_frames.py'],
+    scripts=[
+        'scripts/collate_ms2.py',
+        'scripts/get_frames.py',
+        'scripts/get_midia_groups.py',
+        'scripts/get_midia_overlapping_windows.py',
+    ],
 )
