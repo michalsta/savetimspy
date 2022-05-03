@@ -1,5 +1,6 @@
 import os
 import shutil
+import opentimspy
 from pathlib import Path
 import cffi
 import sqlite3
@@ -49,6 +50,7 @@ def get_err():
     #return s.decode()
     return ''.join(x.decode() for x in s)
 
+
 class SaveTIMS:
     def __init__(self, opentims_obj, path, compression_level = 1):
         self.src_tims_id = None
@@ -66,7 +68,9 @@ class SaveTIMS:
         self.tdf_bin = open(self.dst_path / 'analysis.tdf_bin', 'wb')
         self.sqlcon = sqlite3.connect(self.db_path)
         self.srcsqlcon = sqlite3.connect(self.src_path / 'analysis.tdf')
-        self.sqlcon.execute("DELETE FROM Frames;")
+        # self.sqlcon.execute("DELETE FROM Frames;")
+        with self.sqlcon as cursor:
+            cursor.execute("DELETE FROM Frames;")
         self.compression_level = compression_level
 
     def close(self):
@@ -79,7 +83,9 @@ class SaveTIMS:
         if not self.sqlcon is None:
             rowcount = 1
             while rowcount > 0:
-                rowcount = self.sqlcon.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
+                # rowcount = self.sqlcon.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
+                with self.sqlcon as cursor:
+                    rowcount = cursor.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
                 self.current_frame += 1
             self.sqlcon.commit()
             self.sqlcon.close()
@@ -109,7 +115,8 @@ class SaveTIMS:
         ctims.tims_mz_to_index(self.src_tims_id, self.current_frame, cast("double*", mzs), cast("double*", tofs), len(mzs))
         return self.save_frame_tofs(scans, np.array(tofs, np.uint32), intensities, total_scans, copy_sql=copy_sql)
 
-    def save_frame_tofs(self, scans, tofs, intensities, total_scans, copy_sql = True):
+    def save_frame_tofs(self, scans, tofs, intensities, total_scans, copy_sql = True, run_deduplication=True):
+        """Save current frame into the analysis.tdf_bin and updates the analsys.tdf."""
         if copy_sql == True or isinstance(copy_sql, int):
             if copy_sql == True:
                 src_frame = self.current_frame
@@ -121,10 +128,13 @@ class SaveTIMS:
             qmarks = ['?'] * len(frame_row)
             qmarks = ', '.join(qmarks)
             self.sqlcon.execute("INSERT INTO Frames VALUES (" + qmarks + ")", frame_row)
+            # this dumps the current row into the analysis.tdf
         frame_start_pos = self.tdf_bin.tell()
 
-        scans, tofs, intensities = deduplicate(scans, tofs, intensities)
+        if run_deduplication:
+            scans, tofs, intensities = deduplicate(scans, tofs, intensities)
 
+        # Getting a map scan (list index) -> number of peaks
         peak_cnts = [total_scans]
         ii = 0
         for scan_id in range(1, total_scans):
@@ -192,6 +202,112 @@ class SaveTIMS:
 
         return
 
+
+
+class SaveTIMS2:
+    def __init__(self, 
+        opentims_obj: opentimspy.OpenTIMS,
+        path: Path,
+        compression_level: int=1
+    ):
+        self.src_tims_id = None
+        self.tdf_bin = None
+        self.sqlcon = None
+        self.srcsqlcon = None
+        os.mkdir(path)
+        self.opentims = opentims_obj
+        self.src_path = opentims_obj.analysis_directory
+        self.src_tims_id = ctims.tims_open(bytes(str(opentims_obj.analysis_directory), 'ascii'), 0)
+        self.dst_path = Path(path)
+        self.db_path = self.dst_path / 'analysis.tdf'
+        shutil.copyfile(self.src_path / 'analysis.tdf', self.db_path)
+        self.tdf_bin = open(self.dst_path / 'analysis.tdf_bin', 'wb')
+        self.sqlcon = sqlite3.connect(self.db_path)
+        self.srcsqlcon = sqlite3.connect(self.src_path / 'analysis.tdf')
+        with self.sqlcon as cursor:
+            cursor.execute("DELETE FROM Frames;")
+        self.compression_level = compression_level
+
+    def close(self):
+        if not self.src_tims_id is None:
+            ctims.tims_close(self.src_tims_id)
+            self.src_tims_id = None
+        if not self.tdf_bin is None:
+            self.tdf_bin.close()
+            self.tdf_bin = None
+        if not self.sqlcon is None:
+            self.sqlcon.close()
+            self.sqlcon = None
+        if not self.srcsqlcon is None:
+            self.srcsqlcon.close()
+            self.srcsqlcon = None
+    
+    def __del__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.close()
+
+    def save_frame(
+        self,
+        scans: np.array,
+        tofs: np.array,
+        intensities: np.array,
+        total_scans: int
+    ) -> None:
+        """Save one frame into analysis.tdf_bin."""
+        # preparing peak counts per each scan
+        total_scans = int(total_scans)
+        peak_cnts = [total_scans]
+        ii = 0
+        for scan_id in range(1, total_scans):
+            counter = 0
+            while ii < len(scans) and scans[ii] < scan_id:
+                ii += 1
+                counter += 1
+            peak_cnts.append(counter*2)
+        peak_cnts = np.array(peak_cnts, np.uint32)
+
+        last_tof = -1
+        last_scan = 0
+        for ii in range(len(tofs)):
+            if last_scan != scans[ii]:
+                last_tof = -1
+                last_scan = scans[ii]
+            val = tofs[ii]
+            tofs[ii] = val - last_tof
+            last_tof = val
+
+        assert total_scans >= last_scan, "strange! [Were you perhaps expecting a helpful message?! buahahaha!]"
+
+        if not isinstance(intensities, np.ndarray) or not intensities.dtype == np.uint32:
+            intensities = np.array(intensities, np.uint32)
+
+        # copy-copy, you naugthy Startrek you
+        interleaved = np.vstack([tofs, intensities]).transpose().reshape(len(scans)*2)
+        back_data = peak_cnts.tobytes() + interleaved.tobytes()
+        real_data = bytearray(len(back_data))
+
+        reminder = 0
+        bd_idx = 0
+        for rd_idx in range(len(back_data)):
+            if bd_idx >= len(back_data):
+                reminder += 1
+                bd_idx = reminder
+            real_data[rd_idx] = back_data[bd_idx]
+            bd_idx += 4
+
+        compressed_data = zstd.ZSTD_compress(bytes(real_data), self.compression_level)
+
+        self.tdf_bin.write((len(compressed_data)+8).to_bytes(4, 'little', signed = False))
+        self.tdf_bin.write(total_scans.to_bytes(4, 'little', signed = False))
+        self.tdf_bin.write(compressed_data)
+
+
+    
 
 if __name__ == '__main__':
     from opentimspy import OpenTIMS
