@@ -57,10 +57,7 @@ def compress_data(
     data: bytearray,
     compression_level:int=1
 ) -> bytearray:
-    return zstd.ZSTD_compress(
-        string=bytes(data), 
-        level=compression_level
-    )
+    return zstd.ZSTD_compress(bytes(data), compression_level)
 
 
 def write_frame_bytearray_to_open_file(
@@ -69,5 +66,5 @@ def write_frame_bytearray_to_open_file(
     total_scans: int,
 ) -> None:
     file.write((len(data)+8).to_bytes(4, 'little', signed = False))
-    file.write(total_scans.to_bytes(4, 'little', signed = False))
+    file.write(int(total_scans).to_bytes(4, 'little', signed = False))
     file.write(data)
