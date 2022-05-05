@@ -84,9 +84,9 @@ def write_df(
             saviour.save_frame_tofs(
                 scans=frame_df.scan.values,
                 tofs=frame_df.tof.values,
-                intensities=frame_df.intensity,
-                total_scans=frame_to_NumScans[frame],
-                copy_sql=frame_to_original_frame[frame],
+                intensities=frame_df.intensity.values,
+                total_scans=int(frame_to_NumScans[frame]),
+                copy_sql=int(frame_to_original_frame[frame]),
                 run_deduplication=False,
             )
 
