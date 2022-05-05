@@ -81,9 +81,9 @@ class SaveTIMS:
         if not self.sqlcon is None:
             rowcount = 1
             while rowcount > 0:
-                # rowcount = self.sqlcon.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
-                with self.sqlcon as cursor:
-                    rowcount = cursor.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
+                rowcount = self.sqlcon.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
+                # with self.sqlcon as cursor:
+                #     rowcount = cursor.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
                 self.current_frame += 1
             self.sqlcon.commit()
             self.sqlcon.close()
