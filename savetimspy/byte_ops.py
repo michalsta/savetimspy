@@ -40,7 +40,6 @@ def get_data_as_bytes(
     if not isinstance(intensities, np.ndarray) or not intensities.dtype == np.uint32:
         intensities = np.array(intensities, np.uint32)
 
-    # copy-copy, you naugthy Startrek you
     interleaved = np.vstack([tofs, intensities]).transpose().reshape(len(scans)*2)
     back_data = peak_cnts.tobytes() + interleaved.tobytes()
     real_data = bytearray(len(back_data))

@@ -11,6 +11,8 @@ from opentimspy.sql import table2dict
 from savetimspy.write_df import write_df
 from savetimspy.pandas_ops import deduplicate
 
+from savetimspy.writer import SaveTIMS
+
 source = pathlib.Path("data/raw/G211125_007_Slot1-1_1_3264.d")
 target = pathlib.Path("tests/output.d")
 rawdata = opentimspy.OpenTIMS(source)
@@ -33,23 +35,26 @@ write_df(
     frame_to_original_frame=frame_to_original_frame,
     source=source,
     target=target,
-    FramesTable=FramesTable,
-    verbose=verbose,
-)
+    _deduplicate=True,
+    _sort=True,
+    _verbose=False,
+) 
 
-deduplicate(df)
 
 rawdata_final = opentimspy.OpenTIMS(target)
-rawdata_final.query(frames=[1,2,3])
+out = pd.DataFrame(rawdata_final.query(
+    frames=[1,2,3,4]),
+    columns="frame scan tof intensity".split())
+(df.values == out.values).all()
 
 
-from savetimspy.pandas_ops import (
-    deduplicate,
-    iter_group_based_views_of_data,
-)
+# from savetimspy.pandas_ops import (
+#     deduplicate,
+#     iter_group_based_views_of_data,
+# )
 
-df = deduplicate(df)
-df.dtypes
+# df = deduplicate(df)
+# df.dtypes
 
-x = open("/tmp/test","wb")
-type(x)
+# x = open("/tmp/test","wb")
+# type(x)

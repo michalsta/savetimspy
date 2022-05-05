@@ -68,9 +68,9 @@ class SaveTIMS:
         self.tdf_bin = open(self.dst_path / 'analysis.tdf_bin', 'wb')
         self.sqlcon = sqlite3.connect(self.db_path)
         self.srcsqlcon = sqlite3.connect(self.src_path / 'analysis.tdf')
-        # self.sqlcon.execute("DELETE FROM Frames;")
-        with self.sqlcon as cursor:
-            cursor.execute("DELETE FROM Frames;")
+        self.sqlcon.execute("DELETE FROM Frames;")
+        # with self.sqlcon as cursor:
+        #     cursor.execute("DELETE FROM Frames;")
         self.compression_level = compression_level
 
     def close(self):
@@ -117,6 +117,7 @@ class SaveTIMS:
 
     def save_frame_tofs(self, scans, tofs, intensities, total_scans, copy_sql = True, run_deduplication=True):
         """Save current frame into the analysis.tdf_bin and updates the analsys.tdf."""
+        total_scans = int(total_scans)
         if copy_sql == True or isinstance(copy_sql, int):
             if copy_sql == True:
                 src_frame = self.current_frame
