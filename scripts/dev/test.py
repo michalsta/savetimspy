@@ -52,11 +52,6 @@ for _ in range(1000):
     for new_frame, old_frame in zip(range(1, len(old_frames)+1), old_frames):
         frame_to_original_frame[new_frame] = old_frame
 
-    _deduplicate=True
-    _sort=True
-    _verbose=True
-    _FramesTable=None
-
     write_df(
         df=df,
         frame_to_original_frame=frame_to_original_frame,
@@ -76,4 +71,10 @@ for _ in range(1000):
     if not (df == out).all().all():
         print("error!!!!")
         break
+
+rawdata.query(frames=2, columns=['scan'])['scan'].max()
+rawdata.frames["NumScans"][1]
+
+rawdata.min_mz
+rawdata.max_mz
 

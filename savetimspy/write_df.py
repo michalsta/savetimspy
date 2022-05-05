@@ -16,6 +16,7 @@ from savetimspy.pandas_ops import (
 )
 
 
+
 def write_df(
     df: pd.DataFrame,
     frame_to_original_frame: Dict[int,int],
@@ -81,6 +82,8 @@ def write_df(
             total=len(frame_to_original_frame))
     with SaveTIMS(opentims_obj=input_rawdata, path=target) as saviour:
         for frame, frame_df in frame_data_tuples:
+            if frame_df.scan.max() > frame_to_NumScans[frame]:
+                raise Exception(f"Submitted scan ({frame_df.scan.max()}) was beyond value in the original .tdf ({frame_to_NumScans[frame]}). Stoping dumping. Results are kept on disk under {target}.")
             saviour.save_frame_tofs(
                 scans=frame_df.scan.values,
                 tofs=frame_df.tof.values,
