@@ -53,8 +53,8 @@ def write_df(
     if FramesTable is None:
         FramesTable = pd.DataFrame(table2dict(source/'analysis.tdf', 'Frames'))
     FramesTable.set_index("Id", inplace=True)
-    final_frames_df = FramesTable.loc[frame_to_original_frame.keys()]
-    frame_to_NumPeaks = final_frames_df.NumPeaks.copy()
+    final_frames_df = FramesTable.loc[frame_to_original_frame.keys()].copy()
+    frame_to_NumScans = final_frames_df.NumScans
     final_frames_df = final_frames_df.reset_index()
     final_frames_df.Id = range(1, len(final_frames_df)+1)
     with sqlite3.connect(target/"analysis.tdf") as tdf:
@@ -96,7 +96,7 @@ def write_df(
             dump_one_ready_frame_df_to_tdf(
                 frame_df=frame_df,
                 open_file_handler=tdf_bin,
-                total_scans = frame_to_NumPeaks[frame])
+                total_scans=frame_to_NumScans[frame])
     if verbose:
         print(f"Finished with {target}")
 

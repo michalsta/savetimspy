@@ -16,21 +16,17 @@ target = pathlib.Path("tests/output.d")
 rawdata = opentimspy.OpenTIMS(source)
 FramesTable = pd.DataFrame(rawdata.frames)
 df = pd.DataFrame(
-    rawdata.query(frames=[13,14,15]),
+    rawdata.query(frames=[13,14,15,16]),
     columns=("frame","scan","tof","intensity"),
 )
-df = pd.concat([df]*100, ignore_index=True)
-original_frame_to_frame = {13:1, 14:2, 15:3}
+df = pd.concat([df]*1, ignore_index=True)
+original_frame_to_frame = {13:1, 14:2, 15:3, 16:4}
 df.frame = df.frame.map(original_frame_to_frame)
 df.frame = df.frame.astype(np.uint32)
 df.dtypes
 
-
-
-
-
 verbose = True
-frame_to_original_frame = {1:13, 2:14, 3:15}
+frame_to_original_frame = {1:13, 2:14, 3:15, 4:16}
 
 write_df(
     df=df,
