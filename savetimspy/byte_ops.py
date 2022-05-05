@@ -1,4 +1,6 @@
+import io
 import numpy as np
+import pandas as pd
 import zstd
 
 
@@ -19,6 +21,8 @@ def get_data_as_bytes(
             ii += 1
             counter += 1
         peak_cnts.append(counter*2)
+    #peak_cnts[0] = len(scans)
+    #peak_cnts.append(0)
     peak_cnts = np.array(peak_cnts, np.uint32)
 
     last_tof = -1
@@ -68,3 +72,30 @@ def write_frame_bytearray_to_open_file(
     file.write((len(data)+8).to_bytes(4, 'little', signed = False))
     file.write(int(total_scans).to_bytes(4, 'little', signed = False))
     file.write(data)
+
+
+def dump_one_ready_frame_df_to_tdf(
+    frame_df: pd.DataFrame,
+    open_file_handler: io.BufferedWriter,
+    total_scans: int,
+) -> None:
+    """ 
+    Dump data with only one frame into tdf.
+
+    Ready: containing columns "scan", "tof", and "intensity", no duplicate rows, and sorted in that order.
+    """
+    for column_name in ("scan","tof","intensity"):
+        assert column_name in frame_df, f"Missing '{column_name}' column."
+    total_scans = int(total_scans)
+    frame_bytes = get_data_as_bytes(
+        scans = frame_df.scan.values,
+        tofs = frame_df.tof.values,
+        intensities = frame_df.intensity.values,
+        total_scans = total_scans)
+    compressed_data = compress_data(
+        data=frame_bytes,
+        compression_level=1)
+    write_frame_bytearray_to_open_file(
+        file=open_file_handler,
+        data=compressed_data,
+        total_scans=total_scans)
