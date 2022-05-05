@@ -94,3 +94,26 @@ def write_df(
         print(f"Finished with {target}")
 
     return target
+
+# Making these tests is shit.
+# def test_writer_df():
+#     import pkg_resources
+#     from savetimspy.random import get_random_df
+#     src = pathlib.Path(pkg_resources.resource_filename("savetimspy", "data/test.d"))
+#     target = pathlib.Path("/tmp/test_writer_df.d")
+#     df = get_random_df(10_000)
+    
+#     frame_to_original_frame = {}
+#     old_frames = np.sort(df.frame.unique())
+#     for new_frame, old_frame in zip(range(1, len(old_frames)+1), old_frames):
+#         frame_to_original_frame[new_frame] = old_frame
+
+#     write_df(
+#         df=df,
+#         frame_to_original_frame=frame_to_original_frame,
+#         source=src,
+#         target=target,
+#         _deduplicate=True,
+#         _sort=True,
+#         _verbose=False,
+#     )

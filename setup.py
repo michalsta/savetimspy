@@ -87,6 +87,16 @@ setup(
     zip_safe=False,
     setup_requires=[],
     install_requires=['cffi', 'zstd', 'numpy', 'opentimspy[bruker_proprietary]', 'tqdm'],
+    # extras_require={
+    #     'tests': ['pytest']
+    # },
+    # package_dir={"savetimspy":"savetimspy"},
+    # package_data={"savetimspy": 
+    #     [
+    #         "data/test.d/analysis.tdf",
+    #         "data/test.d/analysis.tdf_bin",
+    #     ]
+    # },
     scripts=[
         'scripts/collate_ms2.py',
         'scripts/get_frames.py',

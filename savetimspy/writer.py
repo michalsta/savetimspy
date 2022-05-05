@@ -69,8 +69,6 @@ class SaveTIMS:
         self.sqlcon = sqlite3.connect(self.db_path)
         self.srcsqlcon = sqlite3.connect(self.src_path / 'analysis.tdf')
         self.sqlcon.execute("DELETE FROM Frames;")
-        # with self.sqlcon as cursor:
-        #     cursor.execute("DELETE FROM Frames;")
         self.compression_level = compression_level
 
     def close(self):
