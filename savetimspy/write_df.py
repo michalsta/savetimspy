@@ -47,7 +47,7 @@ def write_df(
         pathlib.Path: Target .d folder with 'analysis.tdf' and 'analysis.tdf_bin'.
     """
 
-    assert set(frame_to_original_frame) == set(df.frame.unique()), f"The mapping between frame to original frames does not contain the same entries as df.frame! It is {set(frame_to_original_frame)}, while df contains {set(df.frame.unique())}"
+    assert set(frame_to_original_frame) == set(df.frame.unique()), f"The mapping between frame to original frames does not contain the same entries as df.frame!"
 
     input_rawdata = opentimspy.OpenTIMS(source)
 
@@ -83,7 +83,7 @@ def write_df(
     with SaveTIMS(opentims_obj=input_rawdata, path=target) as saviour:
         for frame, frame_df in frame_data_tuples:
             if frame_df.scan.max() > frame_to_NumScans[frame]:
-                raise Exception(f"Submitted scan ({frame_df.scan.max()}) was beyond value in the original .tdf ({frame_to_NumScans[frame]}). Stoping dumping. Results are kept on disk under {target}.")
+                raise Exception(f"Submitted scan ({frame_df.scan.max()}) was beyond value in the original '.tdf' as total_scans ({frame_to_NumScans[frame]}). Stoping dumping. Results are kept on disk under {target}.")
             saviour.save_frame_tofs(
                 scans=frame_df.scan.values,
                 tofs=frame_df.tof.values,

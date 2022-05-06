@@ -178,24 +178,28 @@ class SaveTIMS:
         self.tdf_bin.write(total_scans.to_bytes(4, 'little', signed = False))
         self.tdf_bin.write(compressed_data)
 
-        F = self.sqlcon.execute("""UPDATE Frames SET
-                                        NumScans = ?,
-                                        NumPeaks = ?,
-                                        TimsId = ?,
-                                        MaxIntensity = ?,
-                                        SummedIntensities = ?,
-                                        AccumulationTime = 100.0
-                                    WHERE
-                                        Id = ?;""",
-                                (
-                                    total_scans,
-                                    len(tofs),
-                                    frame_start_pos,
-                                    0 if len(intensities) == 0
-                                    else int(np.max(intensities)),
-                                    int(np.sum(intensities)),
-                                    self.current_frame)
-                                ).rowcount
+        F = self.sqlcon.execute(
+            """UPDATE Frames SET
+                MsMsType = ?,
+                NumScans = ?,
+                NumPeaks = ?,
+                TimsId = ?,
+                MaxIntensity = ?,
+                SummedIntensities = ?,
+                AccumulationTime = 100.0
+            WHERE
+                Id = ?;""",
+            (
+                0,
+                total_scans,
+                len(tofs),
+                frame_start_pos,
+                0 if len(intensities) == 0
+                else int(np.max(intensities)),
+                int(np.sum(intensities)),
+                self.current_frame
+            )
+        ).rowcount
         self.sqlcon.commit()
         self.current_frame += 1
 

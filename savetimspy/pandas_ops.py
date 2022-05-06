@@ -46,8 +46,6 @@ def iter_group_based_views_of_data(
         if len(sub_df):
             yield int(group_prev), sub_df
 
-
-
 # # deduplication does the same thing as savetimspy.numba_helper.deduplicate
 # from savetimspy.numba_helper import deduplicate as deduplicate_numba
 # df1 = df.query('frame == 1')
@@ -58,3 +56,7 @@ def iter_group_based_views_of_data(
 #     intensities=df1.intensity.values)
 # w = pd.DataFrame(np.vstack(w).T, columns='scan tof intensity'.split())
 # (w == deduplicate(df1).iloc[:,1:]).all()
+
+def trivial_group_index_map(xx: np.array):
+    unique_xx = np.unique(xx)    
+    return dict(enumerate(unique_xx, start=1))

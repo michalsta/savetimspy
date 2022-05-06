@@ -1,4 +1,4 @@
-#from numba import jit
+from numba import jit
 #from numba.typed import Dict
 import numpy as np
 from collections import Counter
@@ -22,3 +22,22 @@ def deduplicate(scans, tofs, intensities):
         idx += 1
 
     return ret_scans, ret_tofs, ret_intensities
+
+
+@jit(cache=True)
+def get_groups_as_consecutive_ints(
+    xx: np.array,
+    dtype=np.uint32,
+    start=1,
+):
+    yy = np.empty(len(xx), dtype)
+    x_prev = xx[0]
+    y = start
+    i = 0
+    for x in xx:
+        if x != x_prev:
+            x_prev = x
+            y += 1
+        yy[i] = y
+        i += 1
+    return yy
