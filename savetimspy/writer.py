@@ -113,7 +113,16 @@ class SaveTIMS:
         ctims.tims_mz_to_index(self.src_tims_id, self.current_frame, cast("double*", mzs), cast("double*", tofs), len(mzs))
         return self.save_frame_tofs(scans, np.array(tofs, np.uint32), intensities, total_scans, copy_sql=copy_sql)
 
-    def save_frame_tofs(self, scans, tofs, intensities, total_scans, copy_sql = True, run_deduplication=True):
+    def save_frame_tofs(
+        self,
+        scans,
+        tofs,
+        intensities,
+        total_scans,
+        copy_sql: bool = True,
+        run_deduplication: bool=True,
+        set_MsMsType_to_0: bool=False
+    ):
         """Save current frame into the analysis.tdf_bin and updates the analsys.tdf."""
         total_scans = int(total_scans)
         if copy_sql == True or isinstance(copy_sql, int):
@@ -178,8 +187,27 @@ class SaveTIMS:
         self.tdf_bin.write(total_scans.to_bytes(4, 'little', signed = False))
         self.tdf_bin.write(compressed_data)
 
-        F = self.sqlcon.execute(
-            """UPDATE Frames SET
+        sql_input = (
+            total_scans,
+            len(tofs),
+            frame_start_pos,
+            0 if len(intensities) == 0
+            else int(np.max(intensities)),
+            int(np.sum(intensities)),
+            self.current_frame
+        )
+        if not set_MsMsType_to_0:
+            sql = """UPDATE Frames SET
+                NumScans = ?,
+                NumPeaks = ?,
+                TimsId = ?,
+                MaxIntensity = ?,
+                SummedIntensities = ?,
+                AccumulationTime = 100.0
+            WHERE
+                Id = ?;"""
+        else:
+            sql = """UPDATE Frames SET
                 MsMsType = ?,
                 NumScans = ?,
                 NumPeaks = ?,
@@ -188,18 +216,10 @@ class SaveTIMS:
                 SummedIntensities = ?,
                 AccumulationTime = 100.0
             WHERE
-                Id = ?;""",
-            (
-                0,
-                total_scans,
-                len(tofs),
-                frame_start_pos,
-                0 if len(intensities) == 0
-                else int(np.max(intensities)),
-                int(np.sum(intensities)),
-                self.current_frame
-            )
-        ).rowcount
+                Id = ?;"""
+            sql_input = (0,) + sql_input
+      
+        F = self.sqlcon.execute(sql, sql_input).rowcount
         self.sqlcon.commit()
         self.current_frame += 1
 

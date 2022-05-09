@@ -21,10 +21,13 @@ target = pathlib.Path("data/raw/G211125_007_Slot1-1_1_3264.d/diagonals")
 
 DiaFrameMsMsInfo = pd.DataFrame(table2dict(source/"analysis.tdf", "DiaFrameMsMsWindows"))
 
-_input_stream = ((window_group, window_data, source, target)
- for window_group, window_data in DiaFrameMsMsInfo.groupby("WindowGroup"))
+_input_stream = (
+    (window_group, window_data, source, target)
+    for window_group, window_data in DiaFrameMsMsInfo.groupby("WindowGroup")
+)
 
 window_group, window_frames, source, target = next(_input_stream)
+
 
 
 

@@ -91,6 +91,7 @@ def write_df(
                 total_scans=int(frame_to_NumScans[frame]),
                 copy_sql=int(frame_to_original_frame[frame]),
                 run_deduplication=False,
+                set_MsMsType_to_0=True,
             )
 
     if _verbose:
