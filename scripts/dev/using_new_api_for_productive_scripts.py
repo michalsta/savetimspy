@@ -4,6 +4,14 @@
 """This all can be optimized later on by specific uses of savetimspy."""
 from savetimspy.specific_writers import write_diagonals
 import pathlib
+import opentimspy
+import pandas as pd
+import pathlib
+import numpy as np
+import multiprocessing as mp
+
+from opentimspy.sql import table2dict
+
 
 from opentimspy.sql import table2dict
 
@@ -11,9 +19,14 @@ source = pathlib.Path("data/raw/G211125_007_Slot1-1_1_3264.d")
 target = pathlib.Path("data/raw/G211125_007_Slot1-1_1_3264.d/diagonals")
 # target_paths = write_diagonals(source, target, 10)
 
+DiaFrameMsMsInfo = pd.DataFrame(table2dict(source/"analysis.tdf", "DiaFrameMsMsWindows"))
+
+_input_stream = ((window_group, window_data, source, target)
+ for window_group, window_data in DiaFrameMsMsInfo.groupby("WindowGroup"))
+
 window_group, window_frames, source, target = next(_input_stream)
 
-get_groups_as_consecutive_ints(df.frame.values)
+
 
 df.frame.unique()
 

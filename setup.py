@@ -86,7 +86,13 @@ setup(
              'Programming Language :: Python :: 3.9'],
     zip_safe=False,
     setup_requires=[],
-    install_requires=['cffi', 'zstd', 'numpy', 'opentimspy[bruker_proprietary]', 'tqdm'],
+    install_requires=[
+        'cffi',
+        'zstd',
+        'numpy<1.22',#numba requires that
+        'opentimspy[bruker_proprietary]',
+        'tqdm',
+    ],
     # extras_require={
     #     'tests': ['pytest']
     # },
@@ -101,6 +107,5 @@ setup(
         'scripts/collate_ms2.py',
         'scripts/get_frames.py',
         'scripts/get_midia_groups.py',
-        'scripts/get_midia_overlapping_windows.py',
     ],
 )
