@@ -40,30 +40,23 @@ write_frames(
 # list(db.execute("SELECT NumScans FROM Frames WHERE Id == ?", (frame,)))
 # db.close()
 from dia_common import DiaRun, parameters
+import pathlib
+import opentimspy
+import pandas as pd
+pd.set_option('display.max_columns', None)
+import numpy as np
+import multiprocessing as mp
 
+from dia_common import DiaRun, parameters
+from savetimspy.get_frames import write_frames
+from savetimspy.get_diagonals import write_diagonals
+
+source = pathlib.Path("data/raw/G211125_007_Slot1-1_1_3264.d")
 target = pathlib.Path("tests/diagonals")
 
 compression_level = 1
 make_all_frames_seem_unfragmented = True
 processesNo = 5
 
-diarun = DiaRun(
-        fromwhat=source,
-        preload_data=False,
-        columns=parameters.indices_columns)
-
-_input_stream = (
-    (
-        source,
-        target/f"MS2_MIDIA_STEP_{step}.d",#target
-        frames.values,# frame indices
-        compression_level,
-        make_all_frames_seem_unfragmented,
-        False,#verbose: does not play well with multiprocessing ;)
-    )
-    for step, frames in diarun.DiaFrameMsMsInfo.groupby("step").Frame
-)
-
-with mp.Pool(processesNo) as pool:
-    target_paths = pool.starmap(write_frames, _input_stream)
+target_paths = write_diagonals(source, target, processesNo, compression_level, make_all_frames_seem_unfragmented)
 
