@@ -22,6 +22,8 @@ def write_df(
     frame_to_original_frame: Dict[int,int],
     source: pathlib.Path,
     target: pathlib.Path,
+    compression_level: int=1,
+    make_all_frames_seem_unfragmented: bool=True,
     _FramesTable: Union[pd.DataFrame, None]=None,
     _deduplicate: bool=True,
     _sort: bool=True,
@@ -38,6 +40,8 @@ def write_df(
         frame_to_original_frame (dict): A mapping between the entries of df.frame and the original frame numbers whose meta information should be used in the new 'analysis.tdf'.
         source (pathlib.Path): The source folder: must contain 'analysis.tdf'.
         target (pathlib.Path): The target folder: must not exist before calling the function.
+        compression_level (int): Final compression level.
+        make_all_frames_seem_unfragmented (bool): Change the type of all reported frames in the .tdf so as to make them appear to be unfragmented, i.e. by setting MsMsType to 0.
         _FramesTable (pd.DataFrame|None): The original Frames table. If 'None' will be extracted from 'source/analysis.tdf'.
         _deduplicate: (bool): Should we sum the intensities of events in the table with the same values of 'frame', 'scan', and 'tof'?
         _sort (bool): Should we sort df?
@@ -80,7 +84,11 @@ def write_df(
         frame_data_tuples = tqdm.tqdm(
             frame_data_tuples,
             total=len(frame_to_original_frame))
-    with SaveTIMS(opentims_obj=input_rawdata, path=target) as saviour:
+    with SaveTIMS(
+        opentims_obj=input_rawdata,
+        path=target,
+        compression_level=compression_level,
+    ) as saviour:
         for frame, frame_df in frame_data_tuples:
             if frame_df.scan.max() > frame_to_NumScans[frame]:
                 raise Exception(f"Submitted scan ({frame_df.scan.max()}) was beyond value in the original '.tdf' as total_scans ({frame_to_NumScans[frame]}). Stoping dumping. Results are kept on disk under {target}.")
@@ -91,7 +99,7 @@ def write_df(
                 total_scans=int(frame_to_NumScans[frame]),
                 copy_sql=int(frame_to_original_frame[frame]),
                 run_deduplication=False,
-                set_MsMsType_to_0=True,
+                set_MsMsType_to_0=make_all_frames_seem_unfragmented,
             )
 
     if _verbose:

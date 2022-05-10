@@ -71,7 +71,7 @@ cflags = get_cflags
 setup(
     name='savetimspy',
     packages=['savetimspy'],
-    version='0.0.3',
+    version='0.0.4',
     author='Mateusz Krzysztof Łącki (MatteoLacki), Michał Startek (michalsta)',
     author_email='matteo.lacki@gmail.com, michal.startek@mimuw.edu.pl',
     description='opentimspy: An writer of Bruker Tims Data File (.tdf).',
@@ -92,6 +92,7 @@ setup(
         'numpy<1.22',#numba requires that
         'opentimspy[bruker_proprietary]',
         'tqdm',
+        'dia_common'
     ],
     # extras_require={
     #     'tests': ['pytest']
@@ -105,7 +106,10 @@ setup(
     # },
     scripts=[
         'scripts/collate_ms2.py',
-        'scripts/get_frames.py',
+        # 'scripts/get_frames.py',
+        'savetimspy/get_frames.py',
         'scripts/get_midia_groups.py',
+        'savetimspy/get_diagonals.py',
+        'savetimspy/get_ms2.py',
     ],
 )
