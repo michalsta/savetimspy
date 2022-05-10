@@ -69,7 +69,7 @@ def write_diagonals(
         target.mkdir()
         if verbose:
             print(f"Running {processesNo} processes to make tdfs.")
-        with mp.Pool() as pool:
+        with mp.Pool(processesNo) as pool:
             target_paths = pool.starmap(write_frames, _input_stream)
     except FileExistsError:
         target_paths = [target/f"MS2_MIDIA_STEP_{step}.d" for step in np.sort(diarun.DiaFrameMsMsInfo.step.unique())]
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     parser.add_argument("--leave_original_meta", help="Leave all of the original contents of the analysis.tdf", action='store_true')
     parser.add_argument("--verbose", 
         action='store_true',
-        help='Print more info to STDOUT.')
+        help='Print more info to stdout.')
     parser.add_argument("--compression_level", help="Compression level used.", default=1, type=int)
     parser.add_argument("--processes", help="Upper boundry on the number of processes in multiprocessing to use. The actual number will be this or the number of diagonals.", default=10, type=int)
     args = parser.parse_args()
