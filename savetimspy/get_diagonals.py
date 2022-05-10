@@ -1,15 +1,14 @@
-from __future__ import annotations
 import opentimspy
 import pandas as pd
 import pathlib
 import numpy as np
 import multiprocessing as mp
 
+from typing import List
 from opentimspy.sql import table2dict
 from dia_common import DiaRun, parameters
 
 from savetimspy.get_frames import write_frames
-
 
 
 def assert_minimal_input_for_clusterings_exist(path: pathlib.Path):
@@ -28,7 +27,7 @@ def write_diagonals(
     compression_level: int=1,
     make_all_frames_seem_unfragmented: bool=True,
     verbose: bool=False,
-) -> list[pathlib.Path]:
+) -> List[pathlib.Path]:
     """Write each of the MIDIA diagonal into a respective subfolder of the target folder.
     
     The already existing results are reused (disk-based-caching).
@@ -62,11 +61,15 @@ def write_diagonals(
         )
         for step, frames in diarun.DiaFrameMsMsInfo.groupby("step").Frame
     )
+    processesNo = min(
+        processesNo,
+        len(diarun.DiaFrameMsMsInfo.step.unique())
+    )
     try:
         target.mkdir()
         if verbose:
             print(f"Running {processesNo} processes to make tdfs.")
-        with mp.Pool(processesNo) as pool:
+        with mp.Pool() as pool:
             target_paths = pool.starmap(write_frames, _input_stream)
     except FileExistsError:
         target_paths = [target/f"MS2_MIDIA_STEP_{step}.d" for step in np.sort(diarun.DiaFrameMsMsInfo.step.unique())]
@@ -86,21 +89,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Extract a set of frames from a TDF dataset.')
     parser.add_argument("source", metavar="<source.d>", help="source path", type=pathlib.Path)
     parser.add_argument("target", metavar="<destination.d>", help="destination path", type=pathlib.Path)
-    parser.add_argument("--force", "-f", help="force overwriting of the target path if it exists", action='store_true')
     parser.add_argument("--leave_original_meta", help="Leave all of the original contents of the analysis.tdf", action='store_true')
-    parser.add_argument("--verbose", action='store_true')
+    parser.add_argument("--verbose", 
+        action='store_true',
+        help='Print more info to STDOUT.')
     parser.add_argument("--compression_level", help="Compression level used.", default=1, type=int)
+    parser.add_argument("--processes", help="Upper boundry on the number of processes in multiprocessing to use. The actual number will be this or the number of diagonals.", default=10, type=int)
     args = parser.parse_args()
 
-    if args.force:
-        shutil.rmtree(args.target, ignore_errors=True)
-
     target_paths = write_diagonals(
-        source: pathlib.Path,
-        target: pathlib.Path,
-        processesNo: int=10,
-        compression_level: int=1,
-        make_all_frames_seem_unfragmented: bool=True,
+        source=args.source,
+        target=args.target,
+        processesNo=args.processes,
+        compression_level=args.compression_level,
+        make_all_frames_seem_unfragmented=not args.leave_original_meta,
+        verbose=args.verbose
     )
     if args.verbose:
         print(f"Outcome .d folders:\n"+"\n".join(str(tp) for tp in target_paths))
