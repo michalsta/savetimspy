@@ -9,7 +9,9 @@ import pandas as pd
 import pathlib
 
 from savetimspy import SaveTIMS
-
+from savetimspy.common_assertions import (
+    assert_minimal_input_for_clusterings_exist,
+)
 
 
 def write_frames(
@@ -40,24 +42,30 @@ def write_frames(
 
     frame_indices = np.r_[frame_indices]
 
-    with OpenTIMS(source) as ot,\
-        SaveTIMS(ot, target, compression_level) as s,\
-        sqlite3.connect(source/'analysis.tdf') as db:
-        Id_to_NumScans = dict(zip(ot.frames["Id"], ot.frames["NumScans"]))
-        for frame in progressbar(frame_indices):
-            D = ot.query(frame, columns="scan tof intensity".split())
-            n_scans = int(Id_to_NumScans[frame])
-            # list(db.execute("SELECT NumScans FROM Frames WHERE Id == ?", (frame,)))[0][0]# this was empty!
-            s.save_frame_tofs(
-                scans=D['scan'],
-                tofs=D['tof'],
-                intensities=D['intensity'],
-                total_scans=n_scans,
-            )
+    try:
+        with OpenTIMS(source) as ot,\
+            SaveTIMS(ot, target, compression_level) as s,\
+            sqlite3.connect(source/'analysis.tdf') as db:
+            Id_to_NumScans = dict(zip(ot.frames["Id"], ot.frames["NumScans"]))
+            for frame in progressbar(frame_indices):
+                D = ot.query(frame, columns="scan tof intensity".split())
+                n_scans = int(Id_to_NumScans[frame])
+                # list(db.execute("SELECT NumScans FROM Frames WHERE Id == ?", (frame,)))[0][0]# this was empty!
+                s.save_frame_tofs(
+                    scans=D['scan'],
+                    tofs=D['tof'],
+                    intensities=D['intensity'],
+                    total_scans=n_scans,
+                )
 
-    if make_all_frames_seem_unfragmented:
-        with sqlite3.connect(target/'analysis.tdf') as dst_db:
-            dst_db.execute("UPDATE Frames set MsMsType=0;")
+        if make_all_frames_seem_unfragmented:
+            with sqlite3.connect(target/'analysis.tdf') as dst_db:
+                dst_db.execute("UPDATE Frames set MsMsType=0;")
+
+    except FileExistsError:
+        assert_minimal_input_for_clusterings_exist(target)
+        if verbose:
+            print(f"Results were already there: not repeating.")        
 
     return target
 

@@ -9,14 +9,9 @@ from opentimspy.sql import table2dict
 from dia_common import DiaRun, parameters
 
 from savetimspy.get_frames import write_frames
-
-
-def assert_minimal_input_for_clusterings_exist(path: pathlib.Path):
-    assert path.exists(), f"File {path} does not exist."
-    tdf = path/"analysis.tdf"
-    assert tdf.exists(), f"File {tdf} does not exist."
-    tdf_bin = path/"analysis.tdf_bin"
-    assert tdf_bin.exists(), f"File {tdf_bin} does not exist."
+from savetimspy.common_assertions import (
+    assert_minimal_input_for_clusterings_exist,
+)
 
 
 
