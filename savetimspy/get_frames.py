@@ -61,11 +61,13 @@ def write_frames(
         if make_all_frames_seem_unfragmented:
             with sqlite3.connect(target/'analysis.tdf') as dst_db:
                 dst_db.execute("UPDATE Frames set MsMsType=0;")
+        if verbose:
+            print(f"Finished with: {target}")
 
     except FileExistsError:
         assert_minimal_input_for_clusterings_exist(target)
         if verbose:
-            print(f"Results were already there: not repeating.")        
+            print(f"Results already there ({target}): not repeating.")        
 
     return target
 
