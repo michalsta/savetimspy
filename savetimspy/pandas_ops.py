@@ -1,3 +1,4 @@
+import numba
 import numpy as np
 import pandas as pd
 
@@ -19,8 +20,17 @@ def deduplicate(
     ).intensity.sum()
 
 
-def is_sorted(xx: np.array) -> bool:
-    return np.all(xx[:-1] <= xx[1:])
+# def is_sorted(xx: np.array) -> bool:
+#     return np.all(xx[:-1] <= xx[1:])
+
+@numba.jit
+def is_sorted(xx):
+    x_prev = xx[0]
+    for x in xx:
+        if x < x_prev:
+            return False
+    return True
+
 
 
 def iter_group_based_views_of_data(
