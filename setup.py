@@ -92,7 +92,9 @@ setup(
         'numpy<1.22',#numba requires that
         'opentimspy[bruker_proprietary]',
         'tqdm',
-        'dia_common'
+        'dia_common',
+        'ncls',# nested containment list
+        'pandas',
     ],
     # extras_require={
     #     'tests': ['pytest']

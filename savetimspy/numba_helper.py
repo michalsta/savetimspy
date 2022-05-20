@@ -1,6 +1,7 @@
 from numba import jit
 #from numba.typed import Dict
 import numpy as np
+import numpy.typing as npt
 from collections import Counter
 
 
@@ -41,3 +42,29 @@ def get_groups_as_consecutive_ints(
         yy[i] = y
         i += 1
     return yy
+
+
+@jit
+def coordinatewise_range(
+    starts: npt.NDArray[int],
+    ends:   npt.NDArray[int]
+) -> npt.NDArray[int]:
+    """Spread compact scans into long lists.
+    
+    For instance:
+         ScanNumBegin  ScanNumEnd
+                    0           2
+                    1           4
+                    5           7
+                    0           3
+
+    Would result in:
+        np.array([  0,1,  1,2,3,  5,6,  0,1,2  ])
+
+    
+    """
+    res = []
+    for start, stop in zip(starts, ends):
+        for i in range(start, stop):
+            res.append(i)
+    return np.array(res)

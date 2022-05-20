@@ -51,7 +51,7 @@ def iter_group_based_views_of_data(
             yield int(group_prev), sub_df
             i_prev = i
             group_prev = group
-    if i_prev < i:
+    if i_prev <= i:
         sub_df = df.iloc[i_prev:]
         if len(sub_df):
             yield int(group_prev), sub_df
