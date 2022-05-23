@@ -8,10 +8,15 @@ import pathlib
 import typing
 
 
-from savetimspy.numba_helper import coordinatewise_range
+from savetimspy.common_assertions import (
+    assert_minimal_input_for_clusterings_exist,
+)
+from savetimspy.fs_ops import reset_max_open_soft_file_handles
 from savetimspy.interval_ops import NestedContainmentList
+from savetimspy.numba_helper import coordinatewise_range
 from savetimspy.pandas_ops import is_sorted
-
+from dia_common.dia_main import DiaRun
+from savetimspy.writer import SaveTIMS
 
 
 def make_overlapping_HPR_mz_intervals(
@@ -57,7 +62,7 @@ class HPRS:
         dia_run: DiaRun,
         min_coverage_fraction: float = 0.5,
         window_width: float|None = 36.0,
-        min_scan: int|None = 0,
+        min_scan: int|None = 1,
         max_scan: int|None = None,
         verbose: bool = False,
     ):
@@ -287,15 +292,131 @@ class HPRS:
                     yield (cycle, step, hpr_idx, empty_scan, empty_tof, empty_intensities)
 
 
+
+def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
+    return max( len(str(x)) for x in xx )
+
+
+
 def write_hprs(
+    HPR_intervals: pd.DataFrame,
     source: pathlib.Path,
-    target: pathlib.Path,
-    frame_indices: typing.Union[npt.NDArray[np.uint32], int, typing.Iterable[int]],
+    target: pathlib.Path|None = None,
+    min_coverage_fraction = 0.5,# no unit
+    window_width = 36.0,# Da
+    min_scan: int= 1,
+    max_scan: int|None = None,
     compression_level: int=1,
     make_all_frames_seem_unfragmented: bool=True,
     verbose: bool=False,
-) -> pathlib.Path:
-    pass
+) -> list[pathlib.Path]:
+    padding_for_floats = max(
+        get_max_chars_needed(HPR_intervals.hpr_start),
+        get_max_chars_needed(HPR_intervals.hpr_stop),
+    ) + 1
+    padding_for_ints = get_max_chars_needed(HPR_intervals.index) + 1
+    num2str = lambda number, padding: str(number).zfill(padding).replace(".","_")
+    if target is None:
+        target = source/"HPRs"
+    result_folders = [
+        target/f"HPR_{num2str(hpr.Index, padding_for_ints)}__{num2str(hpr.hpr_start, padding_for_floats)}__{num2str(hpr.hpr_stop, padding_for_floats)}.d"
+        for hpr in HPR_intervals.itertuples()
+    ]
+    try:
+        target.mkdir()
+    except FileExistsError:
+        for target_path in result_folders:
+            assert_minimal_input_for_clusterings_exist(target_path)
+        if verbose:
+            print(f"Results were already there: not repeating.")
+
+    dia_run = DiaRun(
+        fromwhat=source,
+        preload_data=False,
+        columns=("frame", "scan", "tof", "intensity"),
+    )
+    hprs = HPRS(
+        HPR_intervals = HPR_intervals,
+        dia_run = dia_run,
+        min_coverage_fraction = min_coverage_fraction,
+        window_width = window_width,
+        verbose=verbose,
+    )
+
+    reset_max_open_soft_file_handles(verbose=verbose)
+    saviours = {
+        hpr_index: SaveTIMS(
+            opentims_obj=hprs.dia_run.opentims,
+            path=outcome_folder,
+            compression_level=compression_level,
+        ) for hpr_index, outcome_folder in zip(hprs.HPR_intervals.index, result_folders)
+    }
+
+    MS2Frames = pd.DataFrame(hprs.dia_run.opentims.frames).query("MsMsType > 0")
+    cycle_step_to_NumScans = dict(zip(
+        zip(*hprs.dia_run.ms2_frame_to_cycle_step(MS2Frames.Id)),
+        hprs.dia_run.opentims.frames["NumScans"]
+    ))
+
+    for cycle, step, hpr_idx, scans, tofs, intensities in hprs.full_iter(verbose=True):
+        saviour = saviours[hpr_idx]
+        saviour.save_frame_tofs(
+            scans=scans,
+            tofs=tofs,
+            intensities=intensities,
+            total_scans=cycle_step_to_NumScans[(cycle, step)],
+            copy_sql=True,# think later, what should be here...
+            run_deduplication=False,
+            set_MsMsType_to_0=True,
+        )
+    del saviours
+    
+    hprs.HPR_intervals.to_csv(path_or_buf=target/"HPR_intervals.csv")
+    
+    return result_folders
 
 
 
+if __name__ == "__main__":
+    import argparse
+    import shutil
+
+    parser = argparse.ArgumentParser(description='Prepare Hypothetical Precursor Ranges.')
+    parser.add_argument("source", metavar="<source.d>", help="source path", type=pathlib.Path)
+    parser.add_argument("target", metavar="<destination.d>", help="destination path", type=pathlib.Path)
+    parser.add_argument("target", metavar="<destination.d>", help="destination path", type=pathlib.Path)
+    parser.add_argument("--min_hpr_mz", help="The minimal m/z ratio in the sequence of HPRs.", type=float, default=300)
+    parser.add_argument("--max_hpr_mz", help="The maximal m/z ratio in the sequence of HPRs.", type=float, default=1_500)
+    parser.add_argument("--width_hpr_mz", help="The width in m/z of the HPRs.", type=float, default=12.0)
+    parser.add_argument("--min_coverage_fraction", help="The minimal coverage of the HPR by the quadrupole: provide a float fraction between 0 and 1.", type=float, default=0.5)
+    parser.add_argument("--window_width", help="The presumed width of the quadrupole window.", default=36.0)
+    parser.add_argument("--min_scan", help="The minimal scan to consider.", default=1, type=int)
+    parser.add_argument("--max_scan", help="The maximal scan to consider. By default, will impute the value.", default=None)
+    parser.add_argument("--compression_level", help="Compression level used.", default=1, type=int)
+    parser.add_argument("--verbose", 
+        action='store_true',
+        help='Print more info to stdout.')
+    args = parser.parse_args()
+
+    assert args.min_coverage_fraction >= 0, "min_coverage_fraction must be nonnegative"
+    assert args.min_coverage_fraction <= 1, "min_coverage_fraction must smaller equal to 1"
+
+    HPR_intervals = make_overlapping_HPR_mz_intervals(
+        min_mz = args.min_hpr_mz,
+        max_mz = args.max_hpr_mz,
+        width = args.width_hpr_mz,
+    )
+    target_paths = write_hprs(
+        HPR_intervals=HPR_intervals,
+        source=args.source,
+        target=args.target,
+        min_coverage_fraction=args.min_coverage_fraction,# no unit
+        window_width=args.window_width,# Da
+        min_scan=args.min_scan,
+        max_scan=args.max_scan,
+        compression_level=args.compression_level,
+        make_all_frames_seem_unfragmented=not args.leave_original_meta,
+        verbose=args.verbose,
+    )
+    if args.verbose:
+        print(f"Outcome .d folders:\n"+"\n".join(str(tp) for tp in target_paths))
