@@ -1,9 +1,12 @@
 from __future__ import annotations
+from collections import namedtuple
+from tqdm import tqdm
+
 import numpy as np
 import pandas as pd
+import pathlib
 import typing
 
-from tqdm import tqdm
 
 from savetimspy.numba_helper import coordinatewise_range
 from savetimspy.interval_ops import NestedContainmentList
@@ -45,6 +48,8 @@ def infer_the_max_usable_scan(DiaFrameMsMsWindows: pd.DataFrame) -> int:
     return int(DiaFrameMsMsWindows.groupby("step").ScanNumBegin.max()[:-1].min())
 
 
+HPRbyte = namedtuple("HPRbyte", "cycle step hpr_idx scans tofs intensities")
+
 class HPRS:
     def __init__(
         self,
@@ -57,6 +62,7 @@ class HPRS:
         verbose: bool = False,
     ):
         self.HPR_intervals = HPR_intervals
+        self.hpr_indices = HPR_intervals.index.to_numpy()
         self.dia_run = dia_run
         self.min_coverage_fraction = min_coverage_fraction
         self.window_width = window_width
@@ -64,12 +70,19 @@ class HPRS:
 
         # defining quadrupole positions
         self.DiaFrameMsMsWindows = self.dia_run.DiaFrameMsMsWindows
+        self.steps = self.DiaFrameMsMsWindows.step.unique()
         if self.window_width is None:
-            quad_borders_exp = """quadrupole_start = IsolationMz - IsolationWidth / 2.0
-                                  quadrupole_stop  = IsolationMz + IsolationWidth / 2.0 """
+            quad_borders_exp = \
+            """
+                quadrupole_start = IsolationMz - IsolationWidth / 2.0
+                quadrupole_stop  = IsolationMz + IsolationWidth / 2.0
+            """
         else:
-            quad_borders_exp = """quadrupole_start = IsolationMz - @self.window_width / 2.0
-                                  quadrupole_stop  = IsolationMz + @self.window_width / 2.0 """
+            quad_borders_exp = \
+            """
+                quadrupole_start = IsolationMz - @self.window_width / 2.0
+                quadrupole_stop  = IsolationMz + @self.window_width / 2.0
+            """
         self.DiaFrameMsMsWindows = self.DiaFrameMsMsWindows.eval(quad_borders_exp)
 
         # defining scans of interest
@@ -77,6 +90,7 @@ class HPRS:
         if max_scan is None:
             self.max_scan = infer_the_max_usable_scan(self.DiaFrameMsMsWindows)
 
+        self.scans = np.arange(self.min_scan, self.max_scan+1)
         # Mapping (step,scan) to actual quadrupole positions
         self.StepScanToQuadrupole = self.DiaFrameMsMsWindows.loc[
             np.repeat(
@@ -155,6 +169,7 @@ class HPRS:
         empty_df.index.name="scan"
         self.step_to_scan_hpr_dfs = [ empty_df ]*( self.dia_run.max_step+1 )# List must have all scan numbers
         for step, data in self.hpr_quadrupole_matches.groupby("step")[["scan","hpr_idx"]]:
+            data["scan"] = data.scan.astype(np.uint32)
             self.step_to_scan_hpr_dfs[step] = data.set_index("scan")
         for step, step_to_scan_hpr_df in enumerate(self.step_to_scan_hpr_dfs):
             assert is_sorted(step_to_scan_hpr_df.index.values), f"Step's {step} step_to_scan_hpr_df scan index ain't sorted."
@@ -178,9 +193,9 @@ class HPRS:
         assert hpr_idx in self.HPR_intervals.index, f"The range number you provided, hpr_idx={hpr_idx}, is outside the available range, i.e. between {self.HPR_intervals.index.min()} and {self.HPR_intervals.index.max()}."
         start, stop = self.HPR_intervals.loc[hpr_idx]
         fig, ax = plt.subplots()
-        ax.set_xticks(self.StepScanToUsedQuadrupolePosition.columns[:-1]+.5, minor=True)
+        ax.set_xticks(self.steps[:-1]+.5, minor=True)
         ax.xaxis.grid(True, which='minor', linewidth=.2)
-        ax.set_yticks(self.StepScanToUsedQuadrupolePosition.index[:-1]+.5, minor=True)
+        ax.set_yticks(self.scans[:-1]+.5, minor=True)
         ax.yaxis.grid(True, which='minor', linewidth=.2)
         hpr_idxs_touching_the_quadrupole_position = set(
             self.hpr_quadrupole_matches.query("hpr_idx == @hpr_idx").quadrupole_idx
@@ -201,7 +216,7 @@ class HPRS:
         if show:
             plt.show()
 
-    def __iter__(self) -> typing.Iterator[tuple[int,int,int,pd.DataFrame]]:
+    def __iter__(self) -> typing.Iterator[tuple[int,int,int,np.array,np.array,np.array]]:
         """Iterate the tuples of cycle, step, hpr numbers, and the resulting hypothetical precursor range data.
         """
         cols_to_choose = ("scan","tof","intensity")
@@ -210,11 +225,11 @@ class HPRS:
             self.dia_run.DiaFrameMsMsInfo.cycle, 
             self.dia_run.DiaFrameMsMsInfo.step,
         )
-        if self.verbose:
-            cycle_step_tuples = tqdm(
-                cycle_step_tuples,
-                total=len(self.dia_run.DiaFrameMsMsInfo)
-            )
+        # if self.verbose:
+        #     cycle_step_tuples = tqdm(
+        #         cycle_step_tuples,
+        #         total=len(self.dia_run.DiaFrameMsMsInfo)
+        #     )
         for cycle, step in cycle_step_tuples:
             raw_peaks = self.dia_run.get_ms2_raw_peaks_dict(
                 cycle=cycle, 
@@ -222,13 +237,65 @@ class HPRS:
                 columns=cols_to_choose,
             )
             # The easiest thing I could think off...
-            raw_peaks = pd.DataFrame(raw_peaks).set_index("scan")
+            raw_peaks = pd.DataFrame(raw_peaks) 
+            raw_peaks = raw_peaks.set_index("scan")
             raw_peaks_prod = pd.merge(
                 self.step_to_scan_hpr_dfs[step],
                 raw_peaks,
                 left_index=True,
-                right_index=True
+                right_index=True,
             )
+            # yield raw_peaks_prod
             for hpr_idx, data in raw_peaks_prod.groupby("hpr_idx")[tof_intensity]:
-                yield (cycle, step, hpr_idx, data)
+                yield HPRbyte(
+                    cycle,
+                    step,
+                    hpr_idx,
+                    data.index.to_numpy().astype(np.uint32),
+                    data.tof.to_numpy(),
+                    data.intensity.to_numpy(),
+                )
+
+    def full_iter(self, verbose: bool=False) -> typing.Iterator[tuple[int,int,int,np.array,np.array,np.array]]:
+        cycle_step_tuples = zip(
+            self.dia_run.DiaFrameMsMsInfo.cycle, 
+            self.dia_run.DiaFrameMsMsInfo.step,
+        )
+        if verbose:
+            cycle_step_tuples = tqdm(
+                cycle_step_tuples,
+                total=len(self.dia_run.DiaFrameMsMsInfo)
+            )
+        empty_scan = np.array([], dtype=np.uint32)
+        empty_tof = np.array([], dtype=np.uint32)
+        empty_intensities = np.array([], dtype=np.uint32)
+        hpr_bytes = iter(self)
+        finished_hpr_bytes = False
+        try:
+            hpr_byte = next(hpr_bytes)
+        except StopIteration:
+            finished_hpr_bytes = True
+        for cycle, step in cycle_step_tuples:
+            for hpr_idx in self.hpr_indices:
+                if not finished_hpr_bytes and hpr_byte.cycle == cycle and hpr_byte.step == step and hpr_byte.hpr_idx == hpr_idx:
+                    yield hpr_byte
+                    try:
+                        hpr_byte = next(hpr_bytes)
+                    except StopIteration:
+                        finished_hpr_bytes = True
+                else:
+                    yield (cycle, step, hpr_idx, empty_scan, empty_tof, empty_intensities)
+
+
+def write_hprs(
+    source: pathlib.Path,
+    target: pathlib.Path,
+    frame_indices: typing.Union[npt.NDArray[np.uint32], int, typing.Iterable[int]],
+    compression_level: int=1,
+    make_all_frames_seem_unfragmented: bool=True,
+    verbose: bool=False,
+) -> pathlib.Path:
+    pass
+
+
 
