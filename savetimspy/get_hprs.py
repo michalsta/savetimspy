@@ -329,6 +329,7 @@ def write_hprs(
             assert_minimal_input_for_clusterings_exist(target_path)
         if verbose:
             print(f"Results were already there: not repeating.")
+        return result_folders
 
     dia_run = DiaRun(
         fromwhat=source,
