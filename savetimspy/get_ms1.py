@@ -1,3 +1,6 @@
+from __future__ import annotations
+import pathlib
+
 from dia_common import DiaRun
 from savetimspy.get_frames import write_frames
 
