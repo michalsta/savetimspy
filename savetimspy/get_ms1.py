@@ -36,6 +36,7 @@ def write_ms1(
 		frame_indices=dia_run.Frames.query("MsMsType == 0").Id.values,
 		compression_level=compression_level,
 		make_all_frames_seem_unfragmented=True,
+		run_deduplication=False,
 		verbose=verbose,
 	)
 	return output_ms1_d

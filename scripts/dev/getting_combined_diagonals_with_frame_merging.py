@@ -2,9 +2,10 @@
 %autoreload 2
 from savetimspy.get_frames import write_frames
 from savetimspy.get_ms1 import write_ms1
-from savetimspy.get_ms2 import write_ms2
+from savetimspy.get_ms2 import write_ms2, combined_ms2_frames_generator
 from savetimspy.get_diagonals import write_diagonals
-from savetimspy.get_hprs import
+from savetimspy.get_hprs import write_hprs
+from savetimspy.write_frame_datasets import write_frame_datasets
 import shutil
 import pathlib
 import pandas as pd
@@ -13,6 +14,13 @@ pd.set_option('display.max_rows', 43)
 import sqlite3
 import opentimspy
 
+from py4DFF import Run4DFFv4_12_1
+from MSclusterparser.parser import read_4DFF_to_df_physical_dims_only
+
+from savetimspy.write_from_iterator import (
+    FrameDataset,
+    write_from_iterator
+)
 
 project_folder = pathlib.Path(".").expanduser()
 rawdata_folder = project_folder/"rawdata"
@@ -21,60 +29,22 @@ _get_d = lambda x: next(rawdata_folder.glob(x))
 frag5P = _get_d("*3516.d") 
 unfrag5P = _get_d("*3517.d")
 source = frag5P
+source.exists()
 
-target = project_folder/"tests"/"data"/"test_combined_diagonals.d"
+target = project_folder/"tests"/source.name
 
-from savetimspy import SaveTIMS
-from opentimspy import OpenTIMS
-from collections import namedtuple
-
-from savetimspy.common_assertions import (
-    assert_minimal_input_for_clusterings_exist,
+write_frame_datasets(
+    frame_datasets=combined_ms2_frames_generator(source, verbose=True),
+    source=source,
+    target=target,
+    set_MsMsType_to_0=True,
+    run_deduplication=False,
 )
+features = Run4DFFv4_12_1(target)
+clusters = read_4DFF_to_df_physical_dims_only(features)
 
-
-# need some sort of data iterator: it should provide:
-# scan_number, total_scans, source_frame, scans, tofs, intensities
-
-ot = OpenTIMS(source)
-FrameDataset = namedtuple(
-	"FrameDataset",
-	"scan_number total_scans source_frame scans tofs intensities"
-)
-compression_level = 1
-
-
-
-def write_from_iterator(
-	source: pathlib.Path,
-    target: pathlib.Path,
-    frame_datasets: Iterable[FrameDataset],
-    compression_level: int=1,
-    set_MsMsType_to_0: bool=False,
-    verbose: bool=False,
-) -> pathlib.Path:
-	try:
-		if verbose:
-			from tqdm import tqdm
-			frame_datasets = tqdm(frame_datasets)
-
-		with OpenTIMS(source) as ot,\
-		     SaveTIMS(ot, target, compression_level) as saviour:
-			for frame_dataset in frame_datasets:
-				saviour.save_frame_tofs(
-					set_MsMsType_to_0=set_MsMsType_to_0,
-					**frame_dataset._as_dict(),
-				)
-
-	    if verbose:
-		    print(f"Finished with: {target}")
-
-	except FileExistsError:
-        assert_minimal_input_for_clusterings_exist(target)
-        if verbose:
-            print(f"Results already there ({target}): not repeating.")        
-
-
+_get_clusters = lambda p: read_4DFF_to_df_physical_dims_only(p/f"{p.name}.features")
+ms1_vanilla = _get_clusters(source)
 # shutil.rmtree(target)
 # target.exists()
 

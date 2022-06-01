@@ -20,6 +20,7 @@ def write_frames(
     frame_indices: typing.Union[npt.NDArray[np.uint32], int, typing.Iterable[int]],
     compression_level: int=1,
     make_all_frames_seem_unfragmented: bool=False,
+    run_deduplication: bool=False,
     verbose: bool=False,
 ) -> pathlib.Path:
     """Write a selection of frames from source .d folder into target .d folder.
@@ -57,11 +58,12 @@ def write_frames(
                     intensities=D['intensity'],
                     total_scans=n_scans,
                     src_frame=int(frame),# the data of this frame will be copied
+                    run_deduplication=run_deduplication,
+                    set_MsMsType_to_0=make_all_frames_seem_unfragmented,
                 )
-
-        if make_all_frames_seem_unfragmented:
-            with sqlite3.connect(target/'analysis.tdf') as dst_db:
-                dst_db.execute("UPDATE Frames set MsMsType=0;")
+        # if make_all_frames_seem_unfragmented:
+        #     with sqlite3.connect(target/'analysis.tdf') as dst_db:
+        #         dst_db.execute("UPDATE Frames set MsMsType=0;")
         if verbose:
             print(f"Finished with: {target}")
 

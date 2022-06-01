@@ -45,6 +45,8 @@ def write_diagonals(
                     preload_data=False,
                     columns=parameters.indices_columns)
 
+    _run_deduplication = False
+    _verbose = False
     _input_stream = (
         (
             source,
@@ -52,7 +54,8 @@ def write_diagonals(
             frames.values,# frame indices
             compression_level,
             make_all_frames_seem_unfragmented,
-            False,#verbose: does not play well with multiprocessing ;)
+            _run_deduplication,
+            _verbose
         )
         for step, frames in diarun.DiaFrameMsMsInfo.groupby("step").Frame
     )
