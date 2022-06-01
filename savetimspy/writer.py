@@ -69,6 +69,7 @@ class SaveTIMS:
         self.sqlcon = sqlite3.connect(self.db_path)
         self.srcsqlcon = sqlite3.connect(self.src_path / 'analysis.tdf')
         self.sqlcon.execute("DELETE FROM Frames;")
+        # self.sqlcon.execute("begin")
         self.compression_level = compression_level
 
     def close(self):
@@ -82,8 +83,6 @@ class SaveTIMS:
             rowcount = 1
             while rowcount > 0:
                 rowcount = self.sqlcon.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
-                # with self.sqlcon as cursor:
-                #     rowcount = cursor.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
                 self.current_frame += 1
             self.sqlcon.commit()
             self.sqlcon.close()
@@ -119,24 +118,32 @@ class SaveTIMS:
         tofs,
         intensities,
         total_scans,
-        copy_sql: bool = True,
+        copy_sql: int|bool = True,
+        src_frame: int|None = None,
         run_deduplication: bool=True,
         set_MsMsType_to_0: bool=False
     ):
-        """Save current frame into the analysis.tdf_bin and updates the analsys.tdf."""
+        """
+        Save current frame into the analysis.tdf_bin and updates the analsys.tdf.
+        
+        Arguments:
+            src_frame (int or None): The Id of the frame in the source analysis.tdf sqlite db to copy the data from into the current frame. This duplicates the copy_sql functionality that was stupidly named by the Duke Nukem himself while he was on some kind of drugs.
+        """
         total_scans = int(total_scans)
         if copy_sql == True or isinstance(copy_sql, int):
-            if copy_sql == True:
-                src_frame = self.current_frame
-            else:
-                src_frame = copy_sql
+            if src_frame is None:
+                if copy_sql == True:
+                    src_frame = self.current_frame
+                else:
+                    src_frame = copy_sql
+            # get the src_frame info
             frame_row = list(self.srcsqlcon.execute("SELECT * FROM Frames WHERE Id == ?;", (src_frame,)))[0]
             frame_row = list(frame_row)
             frame_row[0] = self.current_frame
             qmarks = ['?'] * len(frame_row)
             qmarks = ', '.join(qmarks)
             self.sqlcon.execute("INSERT INTO Frames VALUES (" + qmarks + ")", frame_row)
-            # this dumps the current row into the analysis.tdf
+            # dump the src_frame row into the new analysis.tdf
         frame_start_pos = self.tdf_bin.tell()
 
         if run_deduplication:

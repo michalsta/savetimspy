@@ -56,6 +56,7 @@ def write_frames(
                     tofs=D['tof'],
                     intensities=D['intensity'],
                     total_scans=n_scans,
+                    src_frame=int(frame),# the data of this frame will be copied
                 )
 
         if make_all_frames_seem_unfragmented:
