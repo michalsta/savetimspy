@@ -7,9 +7,9 @@ from dia_common import DiaRun, parameters
 from tqdm import tqdm
 
 from savetimspy.get_frames import write_frames
-from savetimspy.write_from_iterator import (
+from savetimspy.write_frame_datasets import (
     FrameDataset,
-    write_from_iterator
+    write_frame_datasets
 )
 
 def write_ms2(
@@ -82,6 +82,39 @@ def combined_ms2_frames_generator(
             total_scans=NumScans[ms1_frame_id-1],
             src_frame=ms1_frame_id,
         )
+
+
+def write_ms2_combined_diagonals(
+    source: pathlib.Path,
+    target: pathlib.Path,
+    compression_level: int=1,
+    make_all_frames_seem_unfragmented: bool=True,
+    verbose: bool=False,
+) -> pathlib.Path:
+    """Write all MS2 frames from source .d folder into target .d folder.
+    
+    Note: this likely works as collate:
+        For each cycle, we extract the MS2 steps, combine them, deduplicate,
+        and dump to a tdf.
+        Each such dumped frame gets the meta information of the MS1 frame in that cycle.
+
+    Arguments:
+        source (pathlib.Path): Path of the source .d folder.
+        target (pathlib.Path): Path of the target .d folder: must not exist, parents must exist.
+        compression_level (int): Final compression level.
+        make_all_frames_seem_unfragmented (bool): Change the type of all reported frames in the .tdf so as to make them appear to be unfragmented, i.e. by setting MsMsType to 0.
+        verbose (bool): Show progress bar.
+
+    Returns:
+        pathlib.Path: Path to the target.
+    """
+    return write_frame_datasets(
+        frame_datasets=combined_ms2_frames_generator(source, verbose=verbose),
+        source=source,
+        target=target,
+        set_MsMsType_to_0=make_all_frames_seem_unfragmented,
+        run_deduplication=False,
+    )
 
 
 

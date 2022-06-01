@@ -241,7 +241,6 @@ class HPRS:
                 step=step,
                 columns=cols_to_choose,
             )
-            # The easiest thing I could think off...
             raw_peaks = pd.DataFrame(raw_peaks) 
             raw_peaks = raw_peaks.set_index("scan")
             raw_peaks_prod = pd.merge(
@@ -250,7 +249,6 @@ class HPRS:
                 left_index=True,
                 right_index=True,
             )
-            # yield raw_peaks_prod
             for hpr_idx, data in raw_peaks_prod.groupby("hpr_idx")[tof_intensity]:
                 yield HPRbyte(
                     cycle,
@@ -366,15 +364,19 @@ def write_hprs(
             tofs=tofs,
             intensities=intensities,
             total_scans=cycle_step_to_NumScans[(cycle, step)],
-            copy_sql=True,# think later, what should be here...
+            copy_sql=True,
             run_deduplication=False,
             set_MsMsType_to_0=True,
+            src_frame=dia_run.cycle_to_ms1_frame(cycle),
         )
     del saviours
     
     hprs.HPR_intervals.to_csv(path_or_buf=target/"HPR_intervals.csv")
     
     return result_folders
+
+
+
 
 
 
