@@ -318,15 +318,17 @@ class HPRS:
         ).groupby("cycle").NumScans.max().to_numpy()
 
 
-        for cycle in range(self.dia_run.min_cycle, self.dia_run.max_cycle+1):
+        
+        for cycle, ms2_frame_ids_per_cycle in self.dia_run.DiaFrameMsMsInfo.groupby("cycle")["Frame"]:
             # getting indices:
-            steps_per_cycle = np.arange(self.dia_run.min_step, self.dia_run.max_step+1)
-            ms2_frame_ids_per_cycle = self.dia_run.cycle_step_to_ms2_frame(cycle,steps_per_cycle)
+            # steps_per_cycle = np.arange(self.dia_run.min_step, self.dia_run.max_step+1)
+            # ms2_frame_ids_per_cycle = self.dia_run.cycle_step_to_ms2_frame(cycle,steps_per_cycle)
             ms1_frame_id_in_this_cycle = self.dia_run.cycle_to_ms1_frame(cycle)
 
             # getting raw data
-            raw_peaks_per_cycle = self.dia_run._get_frames_raw( frame_ids=ms2_frame_ids_per_cycle,
-                                                                columns=("frame","scan","tof","intensity") )
+            raw_peaks_per_cycle = self.dia_run._get_frames_raw(
+                frame_ids=ms2_frame_ids_per_cycle,
+                columns=("frame","scan","tof","intensity") )
             raw_peaks_per_cycle['step'] = self.dia_run.ms2_frame_to_step(raw_peaks_per_cycle["frame"])
             del raw_peaks_per_cycle['frame']# not needed, steps in a given cycle encode it
             raw_peaks_per_cycle = pd.DataFrame(raw_peaks_per_cycle)
