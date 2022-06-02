@@ -58,6 +58,11 @@ def combined_ms2_frames_generator(
     dia_run = DiaRun(source)
     NumScans = dia_run.Frames.NumScans.values
     cycles = range(dia_run.no_cycles)
+    dedup = lambda df: df.groupby(
+            ["scan","tof"],
+            sort=True,
+            as_index=False
+        ).intensity.sum()
     if verbose:
         cycles = tqdm(cycles)
     for cycle in cycles:
@@ -69,18 +74,12 @@ def combined_ms2_frames_generator(
             ms2_frames_in_cycle,
             columns=["scan","tof","intensity"]
         ))
-        df = df.groupby(
-            ["scan","tof"],
-            sort=True,
-            as_index=False
-        ).intensity.sum()
+        df = dedup(df)
         ms1_frame_id = dia_run.cycle_to_ms1_frame(cycle)
         yield FrameDataset(
-            scans=df.scan.values,
-            tofs=df.tof.values,
-            intensities=df.intensity.values,
             total_scans=NumScans[ms1_frame_id-1],
             src_frame=ms1_frame_id,
+            df=df,
         )
 
 

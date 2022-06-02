@@ -10,9 +10,13 @@ from savetimspy.common_assertions import (
 )
 
 
+# FrameDataset = namedtuple(
+#     "FrameDataset",
+#     "scans tofs intensities total_scans src_frame "
+# )
 FrameDataset = namedtuple(
-    "FrameDataset",
-    "scans tofs intensities total_scans src_frame "
+    "FrameDataset", 
+    "total_scans src_frame df"
 )
 
 
@@ -37,9 +41,13 @@ def write_frame_datasets(
              SaveTIMS(ot, target, compression_level) as saviour:
             for frame_dataset in frame_datasets:
                 saviour.save_frame_tofs(
+                    scans=frame_dataset.df.scan.to_numpy(),
+                    tofs=frame_dataset.df.tof.to_numpy(),
+                    intensities=frame_dataset.df.intensity.to_numpy(),
+                    total_scans=frame_dataset.total_scans,
+                    src_frame=frame_dataset.src_frame,
                     run_deduplication=run_deduplication,
                     set_MsMsType_to_0=set_MsMsType_to_0,
-                    **frame_dataset._asdict(),
                 )
 
         if verbose:
