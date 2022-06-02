@@ -18,10 +18,8 @@ from savetimspy.numba_helper import coordinatewise_range
 from savetimspy.pandas_ops import is_sorted
 from dia_common.dia_main import DiaRun
 from savetimspy.writer import SaveTIMS
-from savetimspy.write_frame_datasets import (
-    write_frame_datasets,
-    FrameDataset,
-)
+from savetimspy.write_frame_datasets import FrameDataset
+
 
 
 def make_overlapping_HPR_mz_intervals(
@@ -364,21 +362,35 @@ class HPRS:
             right_on="Id"
         ).groupby("cycle").NumScans.max().to_numpy()
 
-        cycles = range(self.dia_run.min_cycle, self.dia_run.max_cycle+1)
+        cycles = np.arange(self.dia_run.min_cycle, self.dia_run.max_cycle+1)
         hpr_indices = self.hpr_indices
         cycle_hpr_idx_tuples = itertools.product(cycles, hpr_indices)
         if verbose:
             cycle_hpr_idx_tuples = tqdm(cycle_hpr_idx_tuples, total=len(cycles)*len(hpr_indices))
 
+        # guards
+        prev_cycle = -1
+        prev_hpr_idx = -1
+        try:
+            prev_cycle, prev_hpr_idx, prev_framedataset = next(cycle_hpr_idx_framedataset_tuples)
+        except StopIteration:
+            pass# cannot stop because emtpying this sequence: need to continue supply of empty data
+
+        # we get the main sequence of events
+        # the loop below is trying to catch up with it
+        # if it catches up, it reports the element from the origal sequence
+        # otherwise, it report empty data.
         for cycle, hpr_idx in cycle_hpr_idx_tuples:
-            try:
-                yield next(cycle_hpr_idx_framedataset_tuples)
-            except StopIteration:
-                framedataset = FrameDataset(
-                    total_scans=cycle2maxNumScans[cycle],
-                    src_frame=self.dia_run.cycle_to_ms1_frame(cycle),
-                    df=empty_df,
-                )
+            if cycle == prev_cycle and hpr_idx == prev_hpr_idx:
+                yield (prev_cycle, prev_hpr_idx, prev_framedataset)
+                try:
+                    prev_cycle, prev_hpr_idx, prev_framedataset = next(cycle_hpr_idx_framedataset_tuples)
+                except StopIteration:
+                    pass
+            else:
+                framedataset = FrameDataset(total_scans = cycle2maxNumScans[cycle],
+                                            src_frame = self.dia_run.cycle_to_ms1_frame(cycle),
+                                            df = empty_df )
                 yield (cycle, hpr_idx, framedataset)
 
 
@@ -392,9 +404,10 @@ def write_hprs(
     HPR_intervals: pd.DataFrame,
     source: pathlib.Path,
     target: pathlib.Path|None = None,
-    min_coverage_fraction = 0.5,# no unit
-    window_width = 36.0,# Da
-    min_scan: int= 1,
+    combine_steps_per_cycle: bool=True,
+    min_coverage_fraction: float=0.5,# no unit
+    window_width: float=36.0,# Da
+    min_scan: int=1,
     max_scan: int|None = None,
     compression_level: int=1,
     make_all_frames_seem_unfragmented: bool=True,
@@ -443,24 +456,37 @@ def write_hprs(
         ) for hpr_index, outcome_folder in zip(hprs.HPR_intervals.index, result_folders)
     }
 
-    MS2Frames = pd.DataFrame(hprs.dia_run.opentims.frames).query("MsMsType > 0")
-    cycle_step_to_NumScans = dict(zip(
-        zip(*hprs.dia_run.ms2_frame_to_cycle_step(MS2Frames.Id)),
-        hprs.dia_run.opentims.frames["NumScans"]
-    ))
+    if combine_steps_per_cycle:
+        for cycle, hpr_idx, frame_dataset in hprs.iter_all_aggregated_cycle_hpr_data(verbose=verbose):
+            saviour = saviours[hpr_idx]
+            saviour.save_frame_tofs(
+                scans=frame_dataset.df.scan.to_numpy(),
+                tofs=frame_dataset.df.tof.to_numpy(),
+                intensities=frame_dataset.df.intensity.to_numpy(),
+                total_scans=frame_dataset.total_scans,
+                src_frame=frame_dataset.src_frame,
+                run_deduplication=False,
+                set_MsMsType_to_0=True,
+            )
+    else:
+        MS2Frames = pd.DataFrame(hprs.dia_run.opentims.frames).query("MsMsType > 0")
+        cycle_step_to_NumScans = dict(zip(
+            zip(*hprs.dia_run.ms2_frame_to_cycle_step(MS2Frames.Id)),
+            hprs.dia_run.opentims.frames["NumScans"]
+        ))
+        for cycle, step, hpr_idx, scans, tofs, intensities in hprs.full_iter(verbose=True):
+            saviour = saviours[hpr_idx]
+            saviour.save_frame_tofs(
+                scans=scans,
+                tofs=tofs,
+                intensities=intensities,
+                total_scans=cycle_step_to_NumScans[(cycle, step)],
+                copy_sql=True,
+                run_deduplication=False,
+                set_MsMsType_to_0=True,
+                src_frame=dia_run.cycle_to_ms1_frame(cycle),
+            )
 
-    for cycle, step, hpr_idx, scans, tofs, intensities in hprs.full_iter(verbose=True):
-        saviour = saviours[hpr_idx]
-        saviour.save_frame_tofs(
-            scans=scans,
-            tofs=tofs,
-            intensities=intensities,
-            total_scans=cycle_step_to_NumScans[(cycle, step)],
-            copy_sql=True,
-            run_deduplication=False,
-            set_MsMsType_to_0=True,
-            src_frame=dia_run.cycle_to_ms1_frame(cycle),
-        )
     del saviours
     
     hprs.HPR_intervals.to_csv(path_or_buf=target/"HPR_intervals.csv")
