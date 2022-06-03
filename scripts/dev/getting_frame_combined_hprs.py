@@ -30,6 +30,7 @@ from savetimspy.write_frame_datasets import (
 from tqdm import tqdm
 from MSclusterparser.boxes_ops import *
 import matplotlib.pyplot as plt
+import plotnine as p
 
 project_folder = pathlib.Path(".").expanduser()
 rawdata_folder = project_folder/"rawdata"
@@ -42,13 +43,16 @@ unfragHeLa = _get_d("*3342.d")
 
 # source = unfrag5P
 source = unfragHeLa
-target = project_folder/"tests"/"hprs"/source.name
-# target = source/"hprs"
+source = fragHeLa
+# target = project_folder/"tests"/"hprs"/source.name
+target = source/"hprs"
+
 
 HPR_intervals = make_overlapping_HPR_mz_intervals(
     min_mz=300,
     max_mz=1500,
 )
+# HPR_intervals.iloc[[198]]
 # HPR_intervals = make_overlapping_HPR_mz_intervals(
 #     min_mz=400,
 #     max_mz=426,
@@ -58,10 +62,7 @@ hprs = HPRS(
     dia_run=DiaRun(source),
     verbose=True,
 )
-# for cycle, hpr_idx, framedataset in tqdm(hprs.iter_nonempty_aggregated_cycle_hpr_data()):
-#     pass
-# for cycle, hpr_idx, framedataset in hprs.iter_all_aggregated_cycle_hpr_data(verbose=True):
-#     pass
+
 
 hpr_folders = write_hprs(
     HPR_intervals=HPR_intervals,
@@ -76,16 +77,6 @@ hpr_folders = write_hprs(
     make_all_frames_seem_unfragmented=True,
     verbose=True,
 )
-hprs.dia_run._acceptable_max_frame
-hprs.dia_run.Frames.query("MsMsType==0").Id
-
-# OK, we have some index error.
-hprs.dia_run.max_cycle
-hprs.dia_run.DiaFrameMsMsInfo
-hprs.dia_run._get_frames_raw()
-
-list(hprs.dia_run.DiaFrameMsMsInfo.groupby("cycle"))
-
 
 # the error stems from iterating over non-existing cycle-step pairs:
 # easy fix: iterate over all of them.
@@ -97,3 +88,65 @@ for hpr_idx, ff in enumerate(feature_folders):
     hpr = get_extents_vol_centers(hpr)
     hpr["experiment"] = hpr_idx
     hpr_clusters.append(hpr)
+
+extent_cols = ["mz_extent","inv_ion_mobility_extent","retention_time_extent"]
+pd.plotting.scatter_matrix(
+    hpr_clusters[2].query("retention_time_extent < 55")[extent_cols],
+    hist_kwds={"bins":101},
+    grid=True,
+    s=1
+)
+plt.show()
+
+
+# I must have given some wrong src_frame... how come???
+points = [len(opentimspy.OpenTIMS(hpr_folder)) for hpr_folder in hpr_folders]
+plt.plot(points)
+plt.show()
+
+# 
+
+
+# cycle = hprs.dia_run.max_cycle
+# src_frame = hprs.dia_run.cycle_to_ms1_frame(cycle)
+# # hprs.dia_run.Frames.tail(20)[['Id','MsMsType']]
+# len(hprs.dia_run.Frames)
+# hprs.dia_run.Frames.tail(10)
+
+# print(type(src_frame))
+# cursor = hprs.dia_run.dia_sqlite.cursor()
+# res = list(cursor.execute(
+#     "SELECT * FROM Frames WHERE Id == ?;",
+#     (src_frame,)
+# ))
+# print(res)
+
+# print(type(int(src_frame)))
+# cursor = hprs.dia_run.dia_sqlite.cursor()
+# res = list(cursor.execute(
+#     "SELECT * FROM Frames WHERE Id == ?;",
+#     (int(src_frame),)
+# ))
+# print(res)
+
+
+# res[0]
+# # well, no wonder...
+
+
+
+# for cycle, hpr_idx, framedataset in tqdm(hprs.iter_nonempty_aggregated_cycle_hpr_data()):
+#     pass
+# for cycle, hpr_idx, framedataset in hprs.iter_all_aggregated_cycle_hpr_data(verbose=True):
+#     pass
+
+# hprs.dia_run._acceptable_max_frame
+# hprs.dia_run.Frames.query("MsMsType==0").Id
+
+# # OK, we have some index error.
+# hprs.dia_run.max_cycle
+# hprs.dia_run.DiaFrameMsMsInfo
+# hprs.dia_run._get_frames_raw()
+
+# list(hprs.dia_run.DiaFrameMsMsInfo.groupby("cycle"))
+

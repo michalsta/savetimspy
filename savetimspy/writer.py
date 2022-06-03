@@ -136,6 +136,7 @@ class SaveTIMS:
                     src_frame = self.current_frame
                 else:
                     src_frame = copy_sql
+            src_frame = int(src_frame)
             # get the src_frame info
             frame_row = list(self.srcsqlcon.execute("SELECT * FROM Frames WHERE Id == ?;", (src_frame,)))[0]
             frame_row = list(frame_row)

@@ -390,9 +390,11 @@ class HPRS:
                 except StopIteration:
                     pass
             else:
-                framedataset = FrameDataset(total_scans = cycle2maxNumScans[cycle],
-                                            src_frame = self.dia_run.cycle_to_ms1_frame(cycle),
-                                            df = empty_df )
+                framedataset = FrameDataset(
+                    total_scans = cycle2maxNumScans[cycle],
+                    src_frame = self.dia_run.cycle_to_ms1_frame(cycle),
+                    df = empty_df
+                )
                 yield (cycle, hpr_idx, framedataset)
 
 

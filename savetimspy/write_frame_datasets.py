@@ -10,10 +10,6 @@ from savetimspy.common_assertions import (
 )
 
 
-# FrameDataset = namedtuple(
-#     "FrameDataset",
-#     "scans tofs intensities total_scans src_frame "
-# )
 FrameDataset = namedtuple(
     "FrameDataset", 
     "total_scans src_frame df"
