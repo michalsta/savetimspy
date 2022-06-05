@@ -78,10 +78,19 @@ hpr_folders = write_hprs(
     verbose=True,
 )
 
-# the error stems from iterating over non-existing cycle-step pairs:
-# easy fix: iterate over all of them.
-
 feature_folders = [Run4DFFv4_12_1(hpr_d, verbose=True) for hpr_d in hpr_folders]
+
+
+points = [len(opentimspy.OpenTIMS(hpr_folder)) for hpr_folder in hpr_folders]
+HPR_intervals['center'] = HPR_intervals.eval("(hpr_start + hpr_stop)/2.0")
+plt.plot(HPR_intervals.center, points)
+plt.scatter(HPR_intervals.center, points)
+plt.xlabel("Center of the HPR")
+plt.ylabel("raw events count")
+plt.show()
+
+
+
 hpr_clusters = []
 for hpr_idx, ff in enumerate(feature_folders):
     hpr = read_4DFF_to_df_physical_dims_only(ff)
@@ -91,62 +100,28 @@ for hpr_idx, ff in enumerate(feature_folders):
 
 extent_cols = ["mz_extent","inv_ion_mobility_extent","retention_time_extent"]
 pd.plotting.scatter_matrix(
-    hpr_clusters[2].query("retention_time_extent < 55")[extent_cols],
+    hpr_clusters[np.argmax(points)].query("retention_time_extent < 55")[extent_cols],
     hist_kwds={"bins":101},
     grid=True,
     s=1
 )
+plt.suptitle(f"Feature Extents For Most Event-Rich ({max(points):_} events) HPR No {np.argmax(points)}.")
 plt.show()
 
-
-# I must have given some wrong src_frame... how come???
-points = [len(opentimspy.OpenTIMS(hpr_folder)) for hpr_folder in hpr_folders]
-plt.plot(points)
+pd.plotting.scatter_matrix(
+    hpr_clusters[np.argmin(points)].query("retention_time_extent < 55")[extent_cols],
+    hist_kwds={"bins":101},
+    grid=True,
+    s=1
+)
+plt.suptitle(f"Feature Extents For Least Event-Rich ({min(points):_} events) HPR No {np.argmin(points)}.")
 plt.show()
 
-# 
+hpr_clusters_df = pd.concat(hpr_clusters, ignore_index=True)
+hpr_clusters_df.query("vol>0")
+MS1 = read_4DFF_to_df_physical_dims_only(source/f"{source.name}.features")
 
+hpr_clusters_df.to_hdf(source/"features.hdf", "hprs")
+MS1.to_hdf(source/"features.hdf", "ms1")
 
-# cycle = hprs.dia_run.max_cycle
-# src_frame = hprs.dia_run.cycle_to_ms1_frame(cycle)
-# # hprs.dia_run.Frames.tail(20)[['Id','MsMsType']]
-# len(hprs.dia_run.Frames)
-# hprs.dia_run.Frames.tail(10)
-
-# print(type(src_frame))
-# cursor = hprs.dia_run.dia_sqlite.cursor()
-# res = list(cursor.execute(
-#     "SELECT * FROM Frames WHERE Id == ?;",
-#     (src_frame,)
-# ))
-# print(res)
-
-# print(type(int(src_frame)))
-# cursor = hprs.dia_run.dia_sqlite.cursor()
-# res = list(cursor.execute(
-#     "SELECT * FROM Frames WHERE Id == ?;",
-#     (int(src_frame),)
-# ))
-# print(res)
-
-
-# res[0]
-# # well, no wonder...
-
-
-
-# for cycle, hpr_idx, framedataset in tqdm(hprs.iter_nonempty_aggregated_cycle_hpr_data()):
-#     pass
-# for cycle, hpr_idx, framedataset in hprs.iter_all_aggregated_cycle_hpr_data(verbose=True):
-#     pass
-
-# hprs.dia_run._acceptable_max_frame
-# hprs.dia_run.Frames.query("MsMsType==0").Id
-
-# # OK, we have some index error.
-# hprs.dia_run.max_cycle
-# hprs.dia_run.DiaFrameMsMsInfo
-# hprs.dia_run._get_frames_raw()
-
-# list(hprs.dia_run.DiaFrameMsMsInfo.groupby("cycle"))
 
