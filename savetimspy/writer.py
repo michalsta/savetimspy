@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import shutil
 import opentimspy
@@ -5,6 +6,9 @@ from pathlib import Path
 import cffi
 import sqlite3
 import numpy as np
+import pandas as pd
+import typing
+import numpy.typing as npt
 import zstd
 import opentims_bruker_bridge
 from savetimspy.numba_helper import (
@@ -14,7 +18,7 @@ from savetimspy.numba_helper import (
     np_zip,
     get_realdata,    
 )
-
+from collections import namedtuple
 
 so_path = opentims_bruker_bridge.get_appropriate_so_path()
 
@@ -57,26 +61,71 @@ def get_err():
     return ''.join(x.decode() for x in s)
 
 
+def update_frames_table(
+    frame_row_updates: typing.Iterable[tuple[int, dict]],
+    sqlite_connection: sqlite3.Connection,
+    _cols: tuple=(
+        'Id',
+        'Time',
+        'Polarity',
+        'ScanMode',
+        'MsMsType',
+        'TimsId',
+        'MaxIntensity',
+        'SummedIntensities',
+        'NumScans',
+        'NumPeaks',
+        'MzCalibration',
+        'T1',
+        'T2',
+        'TimsCalibration',
+        'PropertyGroup',
+        'AccumulationTime',
+        'RampTime',
+    )
+) -> None:
+    """Update the analysis.tdf::Frames table.
+
+    Arguments:
+        frame_row_updates (Iterable of tuples of int and dict): A sequence of tuples with the numbers of the Frame Ids from the sqlite to reuse and a dictionary with updates.
+        sqlite_connection (sqlite3.Connection): An open connection to analysis.tdf.
+        _cols (tuple): Columns in the Frames table.
+    """
+    orig_rows, updates = zip(*frame_row_updates)
+    orig_rows = np.array(orig_rows)
+    updates = pd.DataFrame(updates)
+    Frames = pd.read_sql('SELECT * FROM Frames', sqlite_connection, index_col="Id")
+    Frames = Frames.loc[orig_rows].reset_index()
+    Frames.update(updates)
+    sqlite_connection.execute("DELETE FROM Frames")
+    sqlite_connection.commit()
+    Frames = Frames[list(_cols)]
+    sqlite_connection.executemany(
+        f"INSERT INTO Frames({','.join(_cols)}) VALUES ({','.join('?'*len(_cols))})",
+        Frames.itertuples(index=False)
+    )
+    sqlite_connection.commit()
+
+
+# changes: 
+# * after copy of the original sqlite no additional ops are done on it:
+#   * rationale: I have no idea how sqlite works with multiple handles on it.
 class SaveTIMS:
     def __init__(self, opentims_obj, path, compression_level = 1):
         self.src_tims_id = None
         self.tdf_bin = None
         self.sqlcon = None
-        self.srcsqlcon = None
         os.mkdir(path)
         self.opentims = opentims_obj
-        self.src_path = opentims_obj.analysis_directory
         self.src_tims_id = ctims.tims_open(bytes(str(opentims_obj.analysis_directory), 'ascii'), 0)
         self.dst_path = Path(path)
         self.db_path = self.dst_path / 'analysis.tdf'
-        shutil.copyfile(self.src_path / 'analysis.tdf', self.db_path)
-        self.current_frame = 1
+        shutil.copyfile(opentims_obj.analysis_directory/'analysis.tdf', self.db_path)
+        self.current_frame = 1# that's the Brukies' convention.
         self.tdf_bin = open(self.dst_path / 'analysis.tdf_bin', 'wb')
-        self.sqlcon = sqlite3.connect(self.db_path)
-        self.srcsqlcon = sqlite3.connect(self.src_path / 'analysis.tdf')
-        self.sqlcon.execute("DELETE FROM Frames;")
-        # self.sqlcon.execute("begin")
+        self.sqlcon = sqlite3.connect(self.db_path) 
         self.compression_level = compression_level
+        self.frame_row_updates = [] # will contain tuples (int, dict): the Id of the row to copy the data from and the 
 
     def close(self):
         if not self.src_tims_id is None:
@@ -86,16 +135,12 @@ class SaveTIMS:
             self.tdf_bin.close()
             self.tdf_bin = None
         if not self.sqlcon is None:
-            rowcount = 1
-            while rowcount > 0:
-                rowcount = self.sqlcon.execute("DELETE FROM Frames WHERE Id = ?", (self.current_frame,)).rowcount
-                self.current_frame += 1
-            self.sqlcon.commit()
+            update_frames_table(
+                frame_row_updates=self.frame_row_updates,
+                sqlite_connection=self.sqlcon
+            )
             self.sqlcon.close()
             self.sqlcon = None
-        if not self.srcsqlcon is None:
-            self.srcsqlcon.close()
-            self.srcsqlcon = None
 
     def __del__(self):
         self.close()
@@ -120,39 +165,29 @@ class SaveTIMS:
 
     def save_frame_tofs(
         self,
-        scans,
-        tofs,
-        intensities,
-        total_scans,
+        scans: npt.NDArray[np.uint32],
+        tofs: npt.NDArray[np.uint32],
+        intensities: npt.NDArray[np.uint32],
+        total_scans: int,
         copy_sql: int|bool = True,
         src_frame: int|None = None,
         run_deduplication: bool=True,
-        set_MsMsType_to_0: bool=False
-    ):
+        **kwargs
+    ) -> None:
         """
         Save current frame into the analysis.tdf_bin and updates the analsys.tdf.
         
         Arguments:
             src_frame (int or None): The Id of the frame in the source analysis.tdf sqlite db to copy the data from into the current frame. This duplicates the copy_sql functionality that was stupidly named by the Duke Nukem himself while he was on some kind of drugs.
+            **kwargs: addiditional (column_name, value) mapping for the update of the final Frames table. 
         """
         total_scans = int(total_scans)
-        if copy_sql == True or isinstance(copy_sql, int):
-            if src_frame is None:
-                if copy_sql == True:
-                    src_frame = self.current_frame
-                else:
-                    src_frame = copy_sql
-            src_frame = int(src_frame)
-            # get the src_frame info
-            frame_row = list(self.srcsqlcon.execute("SELECT * FROM Frames WHERE Id == ?;", (src_frame,)))[0]
-            frame_row = list(frame_row)
-            frame_row[0] = self.current_frame
-            qmarks = ['?'] * len(frame_row)
-            qmarks = ', '.join(qmarks)
-            self.sqlcon.execute("INSERT INTO Frames VALUES (" + qmarks + ")", frame_row)
-            # dump the src_frame row into the new analysis.tdf
-        frame_start_pos = self.tdf_bin.tell()
+        if not isinstance(copy_sql, bool):# surprisingly, isinstance(True, int) is True...
+            src_frame = copy_sql
+        if src_frame is None:
+            src_frame = self.current_frame
 
+        frame_start_pos = int(self.tdf_bin.tell())
         if run_deduplication:
             scans, tofs, intensities = deduplicate(scans, tofs, intensities)
 
@@ -169,43 +204,21 @@ class SaveTIMS:
         self.tdf_bin.write(total_scans.to_bytes(4, 'little', signed = False))
         self.tdf_bin.write(compressed_data)
 
-        sql_input = (
-            total_scans,
-            len(tofs),
-            frame_start_pos,
-            0 if len(intensities) == 0
-            else int(np.max(intensities)),
-            int(np.sum(intensities)),
-            self.current_frame
-        )
-        if not set_MsMsType_to_0:
-            sql = """UPDATE Frames SET
-                NumScans = ?,
-                NumPeaks = ?,
-                TimsId = ?,
-                MaxIntensity = ?,
-                SummedIntensities = ?,
-                AccumulationTime = 100.0
-            WHERE
-                Id = ?;"""
-        else:
-            sql = """UPDATE Frames SET
-                MsMsType = ?,
-                NumScans = ?,
-                NumPeaks = ?,
-                TimsId = ?,
-                MaxIntensity = ?,
-                SummedIntensities = ?,
-                AccumulationTime = 100.0
-            WHERE
-                Id = ?;"""
-            sql_input = (0,) + sql_input
-      
-        F = self.sqlcon.execute(sql, sql_input).rowcount
-        self.sqlcon.commit()
+        if copy_sql:
+            frame_row_update = {
+                "Id": self.current_frame,
+                "TimsId": frame_start_pos,
+                "NumScans": total_scans,
+                "NumPeaks": len(tofs),
+                "MaxIntensity": 0 if len(intensities) == 0 else int(np.max(intensities)),
+                "SummedIntensities": int(np.sum(intensities)),
+                "AccumulationTime": 100.0,
+            }
+            frame_row_update.update(kwargs)
+            self.frame_row_updates.append( (src_frame, frame_row_update) )
+
         self.current_frame += 1
 
-        return
 
 
 

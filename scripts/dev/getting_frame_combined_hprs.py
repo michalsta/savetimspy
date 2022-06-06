@@ -32,6 +32,7 @@ from tqdm import tqdm
 from MSclusterparser.boxes_ops import *
 import matplotlib.pyplot as plt
 import plotnine as p
+import typing
 
 project_folder = pathlib.Path(".").expanduser()
 rawdata_folder = project_folder/"rawdata"
@@ -49,67 +50,19 @@ source = fragHeLa
 target = source/"hprs_faster"
 
 
+
 HPR_intervals = make_overlapping_HPR_mz_intervals(
     min_mz=300,
     max_mz=1500,
 )
+compression_level=1
 # HPR_intervals.iloc[[198]]
 # HPR_intervals = make_overlapping_HPR_mz_intervals(
 #     min_mz=400,
 #     max_mz=426,
 # )
-hprs = HPRS(
-    HPR_intervals=HPR_intervals,
-    dia_run=DiaRun(source),
-    verbose=True,
-)
-for cycle, hpr_idx, framedataset in hprs.iter_all_aggregated_cycle_hpr_data(verbose=True):
-    pass
 
-from savetimspy.numba_helper import (
-    deduplicate,
-    get_peak_cnts,
-    modify_tofs,
-    np_zip,
-    get_realdata,    
-)
-import zstd
-import cProfile, pstats, io
-from pstats import SortKey
-import itertools
-
-
-
-total_scans = int(hprs.dia_run.Frames.NumScans.max())
-
-tdf_bin = open('/tmp/analysis.tdf_bin', 'wb')
-
-
-%%snakeviz
-
-for cycle, hpr_idx, framedataset in itertools.islice(
-    hprs.iter_all_aggregated_cycle_hpr_data(verbose=False),
-    10_000
-):
-    scans = framedataset.df.scan.to_numpy()
-    tofs = framedataset.df.tof.to_numpy()
-    intensities = framedataset.df.intensity.to_numpy()
-
-    # Getting a map scan (list index) -> number of peaks
-    peak_cnts = get_peak_cnts(total_scans, scans)
-    modify_tofs(tofs, scans)
-    if not isinstance(intensities, np.ndarray) or not intensities.dtype == np.uint32:
-        intensities = np.array(intensities, np.uint32)
-    interleaved = np_zip(tofs, intensities)
-    real_data = get_realdata(peak_cnts, interleaved)
-    compressed_data = zstd.ZSTD_compress(bytes(real_data), 1)
-
-    tdf_bin.write((len(compressed_data)+8).to_bytes(4, 'little', signed = False))
-    tdf_bin.write(total_scans.to_bytes(4, 'little', signed = False))
-    tdf_bin.write(compressed_data)
-
-
-%%snakeviz
+# %%snakeviz
 hpr_folders = write_hprs(
     HPR_intervals=HPR_intervals,
     source=source,
@@ -122,7 +75,7 @@ hpr_folders = write_hprs(
     compression_level=1,
     make_all_frames_seem_unfragmented=True,
     verbose=True,
-    _max_iterations=10_000,
+    # _max_iterations=1_000,
 )
 
 feature_folders = [Run4DFFv4_12_1(hpr_d, verbose=True) for hpr_d in hpr_folders]
