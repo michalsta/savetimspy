@@ -1,5 +1,6 @@
 %load_ext autoreload
 %autoreload 2
+%load_ext snakeviz
 from savetimspy.get_frames import write_frames
 from savetimspy.get_ms1 import write_ms1
 from savetimspy.get_ms2 import write_ms2, combined_ms2_frames_generator
@@ -42,10 +43,10 @@ fragHeLa = _get_d("*3343.d")
 unfragHeLa = _get_d("*3342.d")
 
 # source = unfrag5P
-source = unfragHeLa
+# source = unfragHeLa
 source = fragHeLa
 # target = project_folder/"tests"/"hprs"/source.name
-target = source/"hprs"
+target = source/"hprs_faster"
 
 
 HPR_intervals = make_overlapping_HPR_mz_intervals(
@@ -62,8 +63,53 @@ hprs = HPRS(
     dia_run=DiaRun(source),
     verbose=True,
 )
+for cycle, hpr_idx, framedataset in hprs.iter_all_aggregated_cycle_hpr_data(verbose=True):
+    pass
+
+from savetimspy.numba_helper import (
+    deduplicate,
+    get_peak_cnts,
+    modify_tofs,
+    np_zip,
+    get_realdata,    
+)
+import zstd
+import cProfile, pstats, io
+from pstats import SortKey
+import itertools
 
 
+
+total_scans = int(hprs.dia_run.Frames.NumScans.max())
+
+tdf_bin = open('/tmp/analysis.tdf_bin', 'wb')
+
+
+%%snakeviz
+
+for cycle, hpr_idx, framedataset in itertools.islice(
+    hprs.iter_all_aggregated_cycle_hpr_data(verbose=False),
+    10_000
+):
+    scans = framedataset.df.scan.to_numpy()
+    tofs = framedataset.df.tof.to_numpy()
+    intensities = framedataset.df.intensity.to_numpy()
+
+    # Getting a map scan (list index) -> number of peaks
+    peak_cnts = get_peak_cnts(total_scans, scans)
+    modify_tofs(tofs, scans)
+    if not isinstance(intensities, np.ndarray) or not intensities.dtype == np.uint32:
+        intensities = np.array(intensities, np.uint32)
+    interleaved = np_zip(tofs, intensities)
+    real_data = get_realdata(peak_cnts, interleaved)
+    compressed_data = zstd.ZSTD_compress(bytes(real_data), 1)
+
+    tdf_bin.write((len(compressed_data)+8).to_bytes(4, 'little', signed = False))
+    tdf_bin.write(total_scans.to_bytes(4, 'little', signed = False))
+    tdf_bin.write(compressed_data)
+
+
+%%snakeviz
 hpr_folders = write_hprs(
     HPR_intervals=HPR_intervals,
     source=source,
@@ -76,10 +122,11 @@ hpr_folders = write_hprs(
     compression_level=1,
     make_all_frames_seem_unfragmented=True,
     verbose=True,
+    _max_iterations=10_000,
 )
 
 feature_folders = [Run4DFFv4_12_1(hpr_d, verbose=True) for hpr_d in hpr_folders]
-
+list(itertools.islice(range(10), None))
 
 points = [len(opentimspy.OpenTIMS(hpr_folder)) for hpr_folder in hpr_folders]
 HPR_intervals['center'] = HPR_intervals.eval("(hpr_start + hpr_stop)/2.0")

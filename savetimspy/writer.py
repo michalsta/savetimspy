@@ -7,7 +7,13 @@ import sqlite3
 import numpy as np
 import zstd
 import opentims_bruker_bridge
-from savetimspy.numba_helper import deduplicate
+from savetimspy.numba_helper import (
+    deduplicate,
+    get_peak_cnts,
+    modify_tofs,
+    np_zip,
+    get_realdata,    
+)
 
 
 so_path = opentims_bruker_bridge.get_appropriate_so_path()
@@ -151,44 +157,12 @@ class SaveTIMS:
             scans, tofs, intensities = deduplicate(scans, tofs, intensities)
 
         # Getting a map scan (list index) -> number of peaks
-        peak_cnts = [total_scans]
-        ii = 0
-        for scan_id in range(1, total_scans):
-            counter = 0
-            while ii < len(scans) and scans[ii] < scan_id:
-                ii += 1
-                counter += 1
-            peak_cnts.append(counter*2)
-        #peak_cnts[0] = len(scans)
-        #peak_cnts.append(0)
-        peak_cnts = np.array(peak_cnts, np.uint32)
-
-        last_tof = -1
-        last_scan = 0
-        for ii in range(len(tofs)):
-            if last_scan != scans[ii]:
-                last_tof = -1
-                last_scan = scans[ii]
-            val = tofs[ii]
-            tofs[ii] = val - last_tof
-            last_tof = val
-
+        peak_cnts = get_peak_cnts(total_scans, scans)
+        modify_tofs(tofs, scans)
         if not isinstance(intensities, np.ndarray) or not intensities.dtype == np.uint32:
             intensities = np.array(intensities, np.uint32)
-
-        interleaved = np.vstack([tofs, intensities]).transpose().reshape(len(scans)*2)
-        back_data = peak_cnts.tobytes() + interleaved.tobytes()
-        real_data = bytearray(len(back_data))
-
-        reminder = 0
-        bd_idx = 0
-        for rd_idx in range(len(back_data)):
-            if bd_idx >= len(back_data):
-                reminder += 1
-                bd_idx = reminder
-            real_data[rd_idx] = back_data[bd_idx]
-            bd_idx += 4
-
+        interleaved = np_zip(tofs, intensities)
+        real_data = get_realdata(peak_cnts, interleaved)
         compressed_data = zstd.ZSTD_compress(bytes(real_data), self.compression_level)
 
         self.tdf_bin.write((len(compressed_data)+8).to_bytes(4, 'little', signed = False))

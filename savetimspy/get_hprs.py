@@ -416,6 +416,7 @@ def write_hprs(
     compression_level: int=1,
     make_all_frames_seem_unfragmented: bool=True,
     verbose: bool=False,
+    _max_iterations: int|None=None,
 ) -> list[pathlib.Path]:
     padding_for_floats = max(
         get_max_chars_needed(HPR_intervals.hpr_start),
@@ -461,7 +462,10 @@ def write_hprs(
     }
 
     if combine_steps_per_cycle:
-        for cycle, hpr_idx, frame_dataset in hprs.iter_all_aggregated_cycle_hpr_data(verbose=verbose):
+        for cycle, hpr_idx, frame_dataset in itertools.islice(
+            hprs.iter_all_aggregated_cycle_hpr_data(verbose=verbose),
+            _max_iterations,
+        ):
             saviour = saviours[hpr_idx]
             saviour.save_frame_tofs(
                 scans=frame_dataset.df.scan.to_numpy(),
@@ -478,7 +482,10 @@ def write_hprs(
             zip(*hprs.dia_run.ms2_frame_to_cycle_step(MS2Frames.Id)),
             hprs.dia_run.opentims.frames["NumScans"]
         ))
-        for cycle, step, hpr_idx, scans, tofs, intensities in hprs.full_iter(verbose=True):
+        for cycle, step, hpr_idx, scans, tofs, intensities in itertools.islice(
+            hprs.full_iter(verbose=verbose),
+            _max_iterations,
+        ):
             saviour = saviours[hpr_idx]
             saviour.save_frame_tofs(
                 scans=scans,
