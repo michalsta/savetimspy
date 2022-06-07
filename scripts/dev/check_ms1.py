@@ -26,17 +26,34 @@ unfrag5P = _get_d("*3517.d")
 fragHeLa = _get_d("*3343.d")
 unfragHeLa = _get_d("*3342.d")
 
-source = unfrag5P
+# source = unfrag5P
 # source = unfragHeLa
 # source = fragHeLa
 
-ms1_faster_d = write_ms1(source=source, target=source/"ms1_faster.d", verbose=True)
-ms1_faster_features = read_4DFF_to_df_physical_dims_only(Run4DFFv4_12_1(ms1_faster_d))
-ms1_slo_incorrect_rts_features = read_4DFF_to_df_physical_dims_only(Run4DFFv4_12_1(source/"ms1.d"))
-# ms1_fixed_rts_features = read_4DFF_to_df_physical_dims_only(Run4DFFv4_12_1(source/"ms1_fixed_rts.d"))
-ms1_vanilla_features = read_4DFF_to_df_physical_dims_only(Run4DFFv4_12_1(source)) 
+HPR_intervals = make_overlapping_HPR_mz_intervals(
+    min_mz=300.0,
+    max_mz=1_500.0,
+)
 
-ms1_vanilla_features
-ms1_faster_features
-# ms1_fixed_rts_features
+
+for source in (frag5P, unfrag5P, fragHeLa, unfragHeLa):
+    ms1_faster_d = write_ms1(source=source, target=source/"ms1_faster.d", verbose=True)
+    ms2_faster_d = write_ms2(source=source, target=source/"ms2_faster.d", verbose=True)
+    diagonals = write_diagonals(source=source, target=source/"diagonals_faster.d", verbose=True)
+    hprs = write_hprs(
+        HPR_intervals=HPR_intervals,
+        source=source,
+        target=source/"hprs_faster",
+        verbose=True,
+    )
+
+# Run4DFFv4_12_1(ms1_faster_d)
+# ms1_faster_features = read_4DFF_to_df_physical_dims_only(Run4DFFv4_12_1(ms1_faster_d))
+# ms1_slo_incorrect_rts_features = read_4DFF_to_df_physical_dims_only(Run4DFFv4_12_1(source/"ms1.d"))
+# # ms1_fixed_rts_features = read_4DFF_to_df_physical_dims_only(Run4DFFv4_12_1(source/"ms1_fixed_rts.d"))
+# ms1_vanilla_features = read_4DFF_to_df_physical_dims_only(Run4DFFv4_12_1(source)) 
+
+# ms1_vanilla_features
+# ms1_faster_features
+# # ms1_fixed_rts_features
 

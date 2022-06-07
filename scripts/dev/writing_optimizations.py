@@ -28,8 +28,17 @@ unfragHeLa = _get_d("*3342.d")
 op = OpenTIMS(unfragHeLa)
 Frames = pd.DataFrame(op.frames)
 total_scans = Frames.NumScans.max()
-df = pd.DataFrame(op.query(frames=range(1,3), columns=("scan","tof","intensity")))
-df = df.groupby(["scan","tof"], as_index=False, sort=True).intensity.sum()
+df = pd.DataFrame(op.query(frames=range(1,20), columns=("scan","tof","intensity")))
+dedup = lambda df: df.groupby(["scan","tof"], as_index=False, sort=True).intensity.sum()
+
+%%time
+z = dedup(df)
+
+
+%%time
+z = np.lexsort((df.tof, df.scan))
+z = df.iloc[z]
+
 
 
 scans = df.scan.to_numpy()

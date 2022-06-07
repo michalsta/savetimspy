@@ -81,7 +81,7 @@ plt.show()
 
 
 hpr_clusters = []
-for hpr_idx, ff in enumerate(feature_folders):
+for hpr_idx, ff in tqdm(enumerate(feature_folders)):
     hpr = read_4DFF_to_df_physical_dims_only(ff)
     hpr = get_extents_vol_centers(hpr)
     hpr["experiment"] = hpr_idx
