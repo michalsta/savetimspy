@@ -82,7 +82,8 @@ def update_frames_table(
         'PropertyGroup',
         'AccumulationTime',
         'RampTime',
-    )
+    ),
+    _Frames: pd.DataFrame|None=None,
 ) -> None:
     """Update the analysis.tdf::Frames table.
 
@@ -90,21 +91,23 @@ def update_frames_table(
         frame_row_updates (Iterable of tuples of int and dict): A sequence of tuples with the numbers of the Frame Ids from the sqlite to reuse and a dictionary with updates.
         sqlite_connection (sqlite3.Connection): An open connection to analysis.tdf.
         _cols (tuple): Columns in the Frames table.
+        _Frames (pd.DataFrame): The contents of the original analysis.tdf:::Frames table. If not provided will be read in from the provided connection.
     """
     orig_rows, updates = zip(*frame_row_updates)
     orig_rows = np.array(orig_rows)
     updates = pd.DataFrame(updates)
-    Frames = pd.read_sql('SELECT * FROM Frames', sqlite_connection, index_col="Id")
-    Frames = Frames.loc[orig_rows].reset_index()
-    Frames.update(updates)
+    if _Frames is None:
+        _Frames = pd.read_sql('SELECT * FROM Frames', sqlite_connection, index_col="Id")
+    _Frames = _Frames.loc[orig_rows].reset_index()
+    _Frames.update(updates)
     sqlite_connection.execute("DELETE FROM Frames")
-    sqlite_connection.commit()
-    Frames = Frames[list(_cols)]
+    sqlite_connection.commit()# Not sure if necessary
+    _Frames = _Frames[list(_cols)]
     sqlite_connection.executemany(
         f"INSERT INTO Frames({','.join(_cols)}) VALUES ({','.join('?'*len(_cols))})",
-        Frames.itertuples(index=False)
+        _Frames.itertuples(index=False)
     )
-    sqlite_connection.commit()
+    sqlite_connection.commit()# Not sure if necessary
 
 
 # changes: 
@@ -127,7 +130,7 @@ class SaveTIMS:
         self.compression_level = compression_level
         self.frame_row_updates = [] # will contain tuples (int, dict): the Id of the row to copy the data from and the 
 
-    def close(self):
+    def close(self, _Frames: pd.DataFrame|None=None):
         if not self.src_tims_id is None:
             ctims.tims_close(self.src_tims_id)
             self.src_tims_id = None
@@ -137,7 +140,8 @@ class SaveTIMS:
         if not self.sqlcon is None:
             update_frames_table(
                 frame_row_updates=self.frame_row_updates,
-                sqlite_connection=self.sqlcon
+                sqlite_connection=self.sqlcon,
+                _Frames=_Frames,
             )
             self.sqlcon.close()
             self.sqlcon = None

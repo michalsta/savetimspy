@@ -138,7 +138,7 @@ class HPRS:
 
         # mapping hypothetical precursor ranges to quadrupole positions
         #   * initially every intersecting quadrupole position is valid
-        #   * shortlisting quadrupole positions that 
+        #   * shortlisting quadrupole positions that intersect with the quadrupole above a given percentage of length.
         interval_db = NestedContainmentList.from_df(HPR_intervals)
         StepScanToQuadrupole_idxs, hpr_idxs = interval_db.query_df(
             self.StepScanToQuadrupole[["quadrupole_start", "quadrupole_stop"]]
@@ -162,7 +162,7 @@ class HPRS:
 
         self.hpr_quadrupole_matches = self.hpr_quadrupole_matches.reset_index(drop=True)# don't need that old index
 
-        # Setting some step, scan positions to unuseful:
+        # Setting some step, scan positions to unuseful (-1):
         self.StepScanToUsedQuadrupolePosition = self.StepScanToQuadrupolePosition.copy()
         self.StepScanToUsedQuadrupolePosition[
             ~self.StepScanToUsedQuadrupolePosition.isin(
@@ -179,8 +179,10 @@ class HPRS:
         for step, data in self.hpr_quadrupole_matches.groupby("step")[["scan","hpr_idx"]]:
             data["scan"] = data.scan.astype(np.uint32)
             self.step_to_scan_hpr_dfs[step] = data.set_index("scan")
+        
         for step, step_to_scan_hpr_df in enumerate(self.step_to_scan_hpr_dfs):
-            assert is_sorted(step_to_scan_hpr_df.index.values), f"Step's {step} step_to_scan_hpr_df scan index ain't sorted."
+            if len(step_to_scan_hpr_df):# some lists can be empty: but we need them anyway for the indexing.
+                assert is_sorted(step_to_scan_hpr_df.index.values), f"Step's {step} step_to_scan_hpr_df scan index ain't sorted."
 
     def plot_scans_and_steps_used_by_hypothetical_precursor_range(
         self, 
@@ -418,6 +420,15 @@ def write_hprs(
     verbose: bool=False,
     _max_iterations: int|None=None,
 ) -> list[pathlib.Path]:
+    """
+    
+    Arguments:
+        HPR_intervals (pd.DataFrame): A data frame with columns 'hpr_start' and 'hpr_stop' describing the beginning and the end of intervals.
+        source (pathlib.Path): Path to source .d folder.
+        target (pathlib.Path): Path to target folder that will be filled with .d subfolders with individual HPR tdfs.
+        combine_steps_per_cycle (bool): Should the steps be combined within a cycles for each individual HPR? It seems to work better with 4DFF.
+
+    """
     padding_for_floats = max(
         get_max_chars_needed(HPR_intervals.hpr_start),
         get_max_chars_needed(HPR_intervals.hpr_stop),
@@ -474,7 +485,7 @@ def write_hprs(
                 total_scans=frame_dataset.total_scans,
                 src_frame=frame_dataset.src_frame,
                 run_deduplication=False,
-                set_MsMsType_to_0=True,
+                MsMsType=0,
             )
     else:
         MS2Frames = pd.DataFrame(hprs.dia_run.opentims.frames).query("MsMsType > 0")
@@ -493,15 +504,16 @@ def write_hprs(
                 intensities=intensities,
                 total_scans=cycle_step_to_NumScans[(cycle, step)],
                 copy_sql=True,
-                run_deduplication=False,
-                set_MsMsType_to_0=True,
                 src_frame=dia_run.cycle_to_ms1_frame(cycle),
+                run_deduplication=False,
+                MsMsType=0,
             )
 
-    del saviours
-    
     hprs.HPR_intervals.to_csv(path_or_buf=target/"HPR_intervals.csv")
-    
+    for savious in saviours.values():
+        savious.close()
+    del saviours
+
     return result_folders
 
 

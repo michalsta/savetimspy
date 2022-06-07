@@ -46,21 +46,12 @@ unfragHeLa = _get_d("*3342.d")
 # source = unfrag5P
 # source = unfragHeLa
 source = fragHeLa
-# target = project_folder/"tests"/"hprs"/source.name
 target = source/"hprs_faster"
 
-
-
 HPR_intervals = make_overlapping_HPR_mz_intervals(
-    min_mz=300,
-    max_mz=1500,
+    min_mz=300.0,
+    max_mz=1_500.0,
 )
-compression_level=1
-# HPR_intervals.iloc[[198]]
-# HPR_intervals = make_overlapping_HPR_mz_intervals(
-#     min_mz=400,
-#     max_mz=426,
-# )
 
 # %%snakeviz
 hpr_folders = write_hprs(
@@ -75,12 +66,10 @@ hpr_folders = write_hprs(
     compression_level=1,
     make_all_frames_seem_unfragmented=True,
     verbose=True,
-    # _max_iterations=1_000,
+    # _max_iterations=10_000,
 )
 
 feature_folders = [Run4DFFv4_12_1(hpr_d, verbose=True) for hpr_d in hpr_folders]
-list(itertools.islice(range(10), None))
-
 points = [len(opentimspy.OpenTIMS(hpr_folder)) for hpr_folder in hpr_folders]
 HPR_intervals['center'] = HPR_intervals.eval("(hpr_start + hpr_stop)/2.0")
 plt.plot(HPR_intervals.center, points)

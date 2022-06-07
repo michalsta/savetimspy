@@ -41,7 +41,7 @@ def write_ms2(
     write_frames(
         source=source,
         target=target,
-        frame_indices=diarun.DiaFrameMsMsInfo.Frame.values,# all frames
+        frame_indices=diarun.DiaFrameMsMsInfo.Frame.to_numpy(),# all frames
         make_all_frames_seem_unfragmented=make_all_frames_seem_unfragmented,
         run_deduplication=False,
         verbose=verbose,

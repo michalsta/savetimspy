@@ -36,6 +36,9 @@ def write_frame_datasets(
         with OpenTIMS(source) as ot,\
              SaveTIMS(ot, target, compression_level) as saviour:
             for frame_dataset in frame_datasets:
+                kwargs = {}
+                if set_MsMsType_to_0:
+                    kwargs["MsMsType"] = 0
                 saviour.save_frame_tofs(
                     scans=frame_dataset.df.scan.to_numpy(),
                     tofs=frame_dataset.df.tof.to_numpy(),
@@ -43,7 +46,7 @@ def write_frame_datasets(
                     total_scans=frame_dataset.total_scans,
                     src_frame=frame_dataset.src_frame,
                     run_deduplication=run_deduplication,
-                    set_MsMsType_to_0=set_MsMsType_to_0,
+                    **kwargs
                 )
 
         if verbose:

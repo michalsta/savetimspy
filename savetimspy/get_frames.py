@@ -51,7 +51,9 @@ def write_frames(
             for frame in progressbar(frame_indices):
                 D = ot.query(frame, columns="scan tof intensity".split())
                 n_scans = int(Id_to_NumScans[frame])
-                # list(db.execute("SELECT NumScans FROM Frames WHERE Id == ?", (frame,)))[0][0]# this was empty!
+                kwargs = {}
+                if make_all_frames_seem_unfragmented:
+                    kwargs["MsMsType"] = 0
                 s.save_frame_tofs(
                     scans=D['scan'],
                     tofs=D['tof'],
@@ -59,11 +61,8 @@ def write_frames(
                     total_scans=n_scans,
                     src_frame=int(frame),# the data of this frame will be copied
                     run_deduplication=run_deduplication,
-                    set_MsMsType_to_0=make_all_frames_seem_unfragmented,
+                    **kwargs,
                 )
-        # if make_all_frames_seem_unfragmented:
-        #     with sqlite3.connect(target/'analysis.tdf') as dst_db:
-        #         dst_db.execute("UPDATE Frames set MsMsType=0;")
         if verbose:
             print(f"Finished with: {target}")
 
