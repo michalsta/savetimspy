@@ -517,17 +517,12 @@ def write_hprs(
     return result_folders
 
 
-
-
-
-
-if __name__ == "__main__":
+def cli():
     import argparse
     import shutil
 
     parser = argparse.ArgumentParser(description='Prepare Hypothetical Precursor Ranges.')
     parser.add_argument("source", metavar="<source.d>", help="source path", type=pathlib.Path)
-    parser.add_argument("target", metavar="<destination.d>", help="destination path", type=pathlib.Path)
     parser.add_argument("target", metavar="<destination.d>", help="destination path", type=pathlib.Path)
     parser.add_argument("--min_hpr_mz", help="The minimal m/z ratio in the sequence of HPRs.", type=float, default=300)
     parser.add_argument("--max_hpr_mz", help="The maximal m/z ratio in the sequence of HPRs.", type=float, default=1_500)
@@ -564,3 +559,8 @@ if __name__ == "__main__":
     )
     if args.verbose:
         print(f"Outcome .d folders:\n"+"\n".join(str(tp) for tp in target_paths))
+
+
+
+if __name__ == "__main__":
+    cli()

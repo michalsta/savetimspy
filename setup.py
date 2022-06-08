@@ -108,10 +108,12 @@ setup(
     # },
     scripts=[
         'scripts/collate_ms2.py',
-        # 'scripts/get_frames.py',
-        'savetimspy/get_frames.py',
+        'scripts/get_frames.py',
         'scripts/get_midia_groups.py',
-        'savetimspy/get_diagonals.py',
-        'savetimspy/get_ms2.py',
+        # new Matteos scripts:
+        'scripts/savetimspy_get_diagonals.py',
+        'scripts/savetimspy_get_ms1.py',
+        'scripts/savetimspy_get_ms2.py',
+        'scripts/savetimspy_get_hprs.py',
     ],
 )

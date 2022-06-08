@@ -116,13 +116,11 @@ def write_ms2_combined_diagonals(
     )
 
 
-
-
-if __name__ == "__main__":
+def cli():
     import argparse
     import shutil
 
-    parser = argparse.ArgumentParser(description='Extract a set of frames from a TDF dataset.')
+    parser = argparse.ArgumentParser(description='Extract a set of MS2 frames from a TDF dataset.')
     parser.add_argument("source", metavar="<source.d>", help="source path", type=pathlib.Path)
     parser.add_argument("target", metavar="<destination.d>", help="destination path", type=pathlib.Path)
     parser.add_argument("--force", "-f", help="force overwriting of the target path if it exists", action='store_true')
@@ -141,3 +139,7 @@ if __name__ == "__main__":
         make_all_frames_seem_unfragmented=not args.leave_original_meta,
         verbose=not args.silent,
     )
+
+
+if __name__ == "__main__":
+    cli()

@@ -79,11 +79,9 @@ def write_diagonals(
     return target_paths
 
 
-
-if __name__ == "__main__":
+def cli():
     import argparse
     import shutil
-
     parser = argparse.ArgumentParser(description='Extract a set of frames from a TDF dataset.')
     parser.add_argument("source", metavar="<source.d>", help="source path", type=pathlib.Path)
     parser.add_argument("target", metavar="<destination.d>", help="destination path", type=pathlib.Path)
@@ -107,31 +105,5 @@ if __name__ == "__main__":
         print(f"Outcome .d folders:\n"+"\n".join(str(tp) for tp in target_paths))
 
 
-# def extract_and_save_diagonal(
-#     window_group: int,
-#     window_frames: np.uint32,
-#     source: pathlib.Path,
-#     target: pathlib.Path,
-#     compression_level: int=1,
-#     make_all_frames_seem_unfragmented: bool=True,
-# ) -> pathlib.Path:
-#     rawdata = opentimspy.OpenTIMS(source)
-#     df = pd.DataFrame(rawdata.query(
-#         frames=window_frames,
-#         columns="frame scan tof intensity".split()))
-
-#     frame_to_original_frame = trivial_group_index_map(df.frame.values)
-#     _ = get_groups_as_consecutive_ints(np.arange(10))#run llvm just in case...
-
-#     df.frame = get_groups_as_consecutive_ints(df.frame.values)
-#     target_path = write_df(
-#         df=df,
-#         frame_to_original_frame=frame_to_original_frame,
-#         source=source,
-#         target=target/f"MS2_MIDIA_STEP_{window_group-1}.d",
-#         _deduplicate=True,
-#         _sort=True,
-#         _verbose=False,
-#     ) 
-#     print(f"Finished with step {window_group}.")
-#     return target_path
+if __name__ == "__main__":
+    cli()
