@@ -57,6 +57,8 @@ def infer_the_max_usable_scan(DiaFrameMsMsWindows: pd.DataFrame) -> int:
 
 
 HPRbyte = namedtuple("HPRbyte", "cycle step hpr_idx scans tofs intensities")
+CycleAggregatedHPR = namedtuple("CycleAggregatedHPR", "cycle hpr_idx FrameDataset")
+
 
 class HPRS:
     def __init__(
@@ -236,11 +238,8 @@ class HPRS:
             self.dia_run.DiaFrameMsMsInfo.step,
         )
         for cycle, step in cycle_step_tuples:
-            raw_peaks = self.dia_run.get_ms2_raw_peaks_dict(
-                cycle=cycle, 
-                step=step,
-                columns=cols_to_choose,
-            )
+            frame_ids = self.dia_run.cycle_step_to_ms2_frame(cycle, step)
+            raw_peaks = self.dia_run.opentims.query(frame_ids, columns=cols_to_choose)
             raw_peaks = pd.DataFrame(raw_peaks) 
             raw_peaks = raw_peaks.set_index("scan")
             raw_peaks_prod = pd.merge(
@@ -328,8 +327,8 @@ class HPRS:
             ms1_frame_id_in_this_cycle = self.dia_run.cycle_to_ms1_frame(cycle)
 
             # getting raw data
-            raw_peaks_per_cycle = self.dia_run._get_frames_raw(
-                frame_ids=ms2_frame_ids_per_cycle,
+            raw_peaks_per_cycle = self.dia_run.opentims.query(
+                frames=ms2_frame_ids_per_cycle,
                 columns=("frame","scan","tof","intensity") )
             raw_peaks_per_cycle['step'] = self.dia_run.ms2_frame_to_step(raw_peaks_per_cycle["frame"])
             del raw_peaks_per_cycle['frame']# not needed, steps in a given cycle encode it
@@ -348,7 +347,7 @@ class HPRS:
                     src_frame = ms1_frame_id_in_this_cycle,
                     df=hpr_data_per_cycle,
                 )
-                yield (cycle, hpr_idx, framedataset)
+                yield CycleAggregatedHPR(cycle, hpr_idx, framedataset)
 
     def iter_all_aggregated_cycle_hpr_data(self, verbose: bool=False) -> typing[tuple[int,int,FrameDataset]]:
         """
@@ -397,7 +396,7 @@ class HPRS:
                     src_frame = self.dia_run.cycle_to_ms1_frame(cycle),
                     df = empty_df
                 )
-                yield (cycle, hpr_idx, framedataset)
+                yield CycleAggregatedHPR(cycle, hpr_idx, framedataset)
 
 
 

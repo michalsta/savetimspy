@@ -13,6 +13,7 @@ from savetimspy.get_hprs import (
     write_hprs,
 )
 from savetimspy.write_frame_datasets import write_frame_datasets
+import itertools
 import shutil
 import pathlib
 import pandas as pd
@@ -30,7 +31,7 @@ from savetimspy.write_frame_datasets import (
 )
 from tqdm import tqdm
 from MSclusterparser.boxes_ops import *
-from clusterMS.plotting import scatterplot_matrix_alla_polacca
+from kilograms import scatterplot_matrix, histogram1D, histogram2D
 
 import matplotlib.pyplot as plt
 import plotnine as p
@@ -55,6 +56,30 @@ HPR_intervals = make_overlapping_HPR_mz_intervals(
     min_mz=300.0,
     max_mz=1_500.0,
 )
+
+dia_run = DiaRun(
+    fromwhat=source,
+    preload_data=False,
+    columns=("frame", "scan", "tof", "intensity"),
+)
+
+?dia_run.opentims.query
+
+hprs = HPRS(
+    HPR_intervals=HPR_intervals,
+    dia_run=dia_run,
+    verbose=True,
+)
+# old10 = list(itertools.islice(hprs.iter_nonempty_aggregated_cycle_hpr_data(), 10))
+new10 = list(itertools.islice(hprs.iter_nonempty_aggregated_cycle_hpr_data(), 10))
+
+
+
+
+# for cahpr in hprs.iter_all_aggregated_cycle_hpr_data(verbose=True):
+#     pass
+
+
 
 # %%snakeviz
 hpr_folders = write_hprs(
@@ -148,6 +173,8 @@ plt.scatter(MS1.mz_center,
 plt.plot([250, 500,1_000], [0.6, 1, 1.4])
 plt.show()
 
+
+
 def point_to_intercept_and_slope(x0,y0,x1,y1):
     slope = (y1-y0)/(x1-x0)
     intercept = y0 - slope*x0
@@ -157,13 +184,13 @@ b0,a0 = point_to_intercept_and_slope(x0=250, y0=0.6, x1=500, y1=1.0)
 b1,a1 = point_to_intercept_and_slope(x0=500, y0=1.0, x1=1_000, y1=1.4)
 MS1["charge_1"] = ~MS1.eval(f"{a0}*mz_center + {b0} >= inv_ion_mobility_center and {a1}*mz_center + {b1} >= inv_ion_mobility_center")
     
-plt.scatter(MS1.mz_center,
-            MS1.inv_ion_mobility_center,
-            alpha=normalize(MS1.intensity),
-            s=4,
-            c=np.where(MS1.charge_1,'blue','orange'))
-plt.plot([250, 500,1_000], [0.6, 1, 1.4])
-plt.show()
+# plt.scatter(MS1.mz_center,
+#             MS1.inv_ion_mobility_center,
+#             alpha=normalize(MS1.intensity),
+#             s=4,
+#             c=np.where(MS1.charge_1,'blue','orange'))
+# plt.plot([250, 500,1_000], [0.6, 1, 1.4])
+# plt.show()
 
 
 def get_quantiles(x, bins=1_000):
@@ -192,12 +219,7 @@ plt.show()
 
 extent_cols = ["mz_extent","inv_ion_mobility_extent","retention_time_extent"]
 MS1_nonzero = MS1[np.any(MS1[extent_cols] > 0, axis=1)]
-for c in extent_cols:
-    MS1_nonzero
-X = pd.DataFrame({c:pd.qcut(x=MS1_nonzero[c], q=[0, 0.05, 0.95, 1.0], labels=['small','good','large'])
-    for c in extent_cols} 
-)
-MS1_90_perc = MS1_nonzero[np.all(X == 'good',axis=1)].copy()
+
 
 MS1_90_perc["intensity_over_vol"] = MS1_90_perc.intensity / MS1_90_perc.vol
 MS1_90_perc["log10_intensity_over_vol"] = np.log10(MS1_90_perc.intensity_over_vol)
@@ -220,6 +242,8 @@ plt.show()
 columns = extent_cols
 
 
+
+extent_cols = ["mz_extent","inv_ion_mobility_extent","retention_time_extent"]
 MS1_multicharge = MS1.query('~charge_1 and vol>0').copy()
 column_to_min_max_tuple = column_quantiles(MS1_multicharge[extent_cols])
 MS1_final = cut_df(MS1_multicharge, **column_quantiles(MS1_multicharge[extent_cols])).copy()
@@ -230,29 +254,152 @@ MS1_final["intensity_over_vol"] = MS1_final.intensity / MS1_final.vol
 # diagonal: histograms
 # off diagonal: heatmaps after some binning
 
-plt.hexbin(MS1_final.mz_extent, MS1_final.intensity, yscale='log')
-plt.show()
-
-columns = ['mz_extent', 'inv_ion_mobility_extent', 'retention_time_extent', 'intensity', 'intensity_over_vol']
-
+df = MS1_final[["mz_extent","inv_ion_mobility_extent","retention_time_extent"]].copy()
+df["log10_intensity"] = np.log10(MS1_final.intensity)
+df["log10_vol"] = np.log10(MS1_final.vol)
 
 with plt.style.context('dark_background'):
-    scatterplot_matrix_alla_polacca(
-        df=MS1_final[columns],
-        hexbin_kwargs={"cmap":"inferno"},
-        log_scale={"intensity","intensity_over_vol"},
+    scatterplot_matrix(
+        df=df,
+        imshow_kwargs={"cmap":"inferno"},
     )
+
+extent_cols = ["mz_extent","inv_ion_mobility_extent","retention_time_extent"]
+hprs_preprocessed = hpr_clusters_df.query("vol>0")
+hprs_preprocessed = cut_df(hprs_preprocessed, **column_quantiles(hprs_preprocessed[extent_cols])).copy()
+hprs_preprocessed["intensity_over_vol"] = hprs_preprocessed.intensity / hprs_preprocessed.vol
+
+df = hprs_preprocessed[["mz_extent","inv_ion_mobility_extent","retention_time_extent"]].copy()
+df["log10_intensity"] = np.log10(hprs_preprocessed.intensity)
+df["log10_vol"] = np.log10(hprs_preprocessed.vol)
+
+
+from clusterMS.plotting import scatterplot_matrix, hist2d, hist1d
+import fast_histogram
+
+import numba
+hist_kwargs: dict={"bins":101}
+
+@numba.jit(nopython=True)
+def min_max(xx):
+    xx_min = np.inf 
+    xx_max =-np.inf
+    for x in xx:
+        xx_min = min(xx_min, x)
+        xx_max = max(xx_max, x)
+    return (xx_min,xx_max)
+
+xx = df.mz_extent.to_numpy()
+# xx = xx[:100]
+bins = 1_000
+extent = min_max(xx)
+
+
+@numba.jit(nopython=True)
+def histogram1D(xx, extent, bins):
+    xx_min, xx_max = extent
+    mult = bins / (xx_max - xx_min)
+    result = np.zeros(bins+1, dtype=np.uint32)
+    for x in xx:
+        idx = (x-xx_min)*mult
+        result[int(idx)] += 1
+    result[bins-1] += result[bins]
+    return result[:-1]
+
+%%timeit
+histogram1D(xx, extent, bins)
+
+xx = df.mz_extent.to_numpy()
+yy = df.inv_ion_mobility_extent.to_numpy()
+extent = (min_max(xx), min_max(yy))
+bins = (1000, 500)
+
+@numba.jit(nopython=True, parallel=True)
+def histogram2D(xx, yy, extent, bins):
+    (xx_min, xx_max), (yy_min,yy_max) = extent
+    xx_bins, yy_bins = bins
+    xx_mult = xx_bins / (xx_max - xx_min)
+    yy_mult = yy_bins / (yy_max - yy_min)
+    result = np.zeros((xx_bins+1, yy_bins+1), dtype=np.uint32)
+    for x in xx:
+        for y in yy:
+            result[int((x-xx_min)*xx_mult), int((y-yy_min)*yy_mult)] += 1
+    return result
+    # result[bins-1] += result[bins]
+    # return result[:-1]
+
+histogram2D(xx[:100], yy[:100], extent, bins)
+histogram2D(xx, yy, extent, bins)
+
+
+%%timeit
+I = histogram1D(xx, extent, bins)
+
+%%timeit
+J, b = np.histogram(xx, bins=bins, range=extent)
+
+%%timeit
+J = fast_histogram.histogram1d(xx, bins=bins, range=extent)
+J = J.astype(np.uint32)
+J.sum()
+I.sum()
+len(xx)
+len(I) 
+J[-1]
+I[-1]
+np.all()
+plt.plot(I)
+plt.show()
+%%timeit
+np.min(df.mz_extent.to_numpy())
+np.max(df.mz_extent.to_numpy())
+
+
+
+%%time
+histograms = {
+    col: hist1d(df[col], **hist_kwargs) for i,col in enumerate(df)
+}
+
+%%time
+histograms = {
+    col: np.histogram(df[col], **hist_kwargs) for i,col in enumerate(df)
+}
+
+
+
+
+counts, borders = np.histogram(df.mz_extent)
+centers = (borders[:-1] + borders[1:])/2.0
+
+plt.plot(centers, counts)
+plt.show()
+
+
+
+
+
+
 
 hprs_preprocessed = hpr_clusters_df.query("vol>0")
 hprs_preprocessed = cut_df(hprs_preprocessed, **column_quantiles(hprs_preprocessed[extent_cols])).copy()
 hprs_preprocessed["intensity_over_vol"] = hprs_preprocessed.intensity / hprs_preprocessed.vol
 
+df = hprs_preprocessed[["mz_extent","inv_ion_mobility_extent","retention_time_extent"]].copy()
+df["log10_intensity"] = np.log10(hprs_preprocessed.intensity)
+df["log10_vol"] = np.log10(hprs_preprocessed.vol)
+
 with plt.style.context('dark_background'):
-    scatterplot_matrix_alla_polacca(
-        df=hprs_preprocessed[columns],
-        hexbin_kwargs={"cmap":"inferno"},
-        log_scale={"intensity","intensity_over_vol"}
+    scatterplot_matrix(
+        df=df,
+        imshow_kwargs={"cmap":"inferno"},
     )
-# moglibyśmy to wszystko jeszcze zdyskretyzować, albo, przynajmniej, zdyskredytować.
+
+
+scatterplot_matrix(
+    df=df,
+    imshow_kwargs={"cmap":"inferno"},
+)
+
 
 
