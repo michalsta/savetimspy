@@ -4,6 +4,7 @@ from tqdm import tqdm
 
 import itertools
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import pathlib
 import typing
@@ -21,7 +22,7 @@ from savetimspy.numba_helper import (
 from savetimspy.pandas_ops import is_sorted
 from dia_common.dia_main import DiaRun
 from savetimspy.writer import SaveTIMS
-from savetimspy.write_frame_datasets import FrameDataset
+from savetimspy.write_frame_datasets import FrameSaveBundle
 
 
 
@@ -59,9 +60,8 @@ def infer_the_max_usable_scan(DiaFrameMsMsWindows: pd.DataFrame) -> int:
     return int(DiaFrameMsMsWindows.groupby("step").ScanNumBegin.max()[:-1].min())
 
 
-HPRbyte = namedtuple("HPRbyte", "cycle step hpr_idx scans tofs intensities")
 CycleAggregatedHPR = namedtuple("CycleAggregatedHPR", "cycle hpr_idx FrameDataset")
-
+HPR_FRAME_META_AND_DATA_TYPE = tuple[int,int,int,dict[str, npt.NDArray]]
 
 class HPRS:
     def __init__(
@@ -200,17 +200,17 @@ class HPRS:
             if len(step_to_scan_hpr_df):# some lists can be empty: but we need them anyway for the indexing.
                 assert is_sorted(step_to_scan_hpr_df.index.values), f"Step's {step} step_to_scan_hpr_df scan index ain't sorted."
 
-        self.hpr_step_to_scan_min_max_scan = {
+        self.hpr_step_to_scan_min_max = {
             (hpr_idx, step): (np.min(scans), np.max(scans))
             for (hpr_idx, step), scans in self.hpr_quadrupole_matches.groupby(["hpr_idx", "step"]).scan
         }
 
-        self.MS2_INFO = self.dia_run.DiaFrameMsMsInfo
 
     def hpr_idx_scan_to_step(self) -> dict[tuple[int], tuple[int]]:
         return {k: tuple(v) 
             for k, v in self.hpr_quadrupole_matches.groupby(["hpr_idx","scan"]).step
         }
+
 
     def plot_scans_and_steps_used_by_hypothetical_precursor_range(
         self, 
@@ -254,45 +254,13 @@ class HPRS:
         if show:
             plt.show()
 
-    #TODO: get rid of this?
-    def iter_hprs_per_cycle_step(
-        self,
-        columns = ("scan","tof","intensity"),
-    ) -> typing.Iterator[HPRbyte]:
-        """Iterate the tuples of cycle, step, hpr numbers, and the resulting hypothetical precursor range data.
-        """
-        tof_intensity = ["tof","intensity"]
-        cycle_step_tuples = zip(
-            self.dia_run.DiaFrameMsMsInfo.cycle, 
-            self.dia_run.DiaFrameMsMsInfo.step,
-        )
-        for cycle, step in cycle_step_tuples:
-            frame_ids = self.dia_run.cycle_step_to_ms2_frame(cycle, step)
-            raw_peaks = self.dia_run.opentims.query(frame_ids, columns=columns)
-            raw_peaks = pd.DataFrame(raw_peaks) 
-            raw_peaks = raw_peaks.set_index("scan")
-            raw_peaks_prod = pd.merge(
-                self.step_to_scan_hpr_dfs[step],
-                raw_peaks,
-                left_index=True,
-                right_index=True,
-            )
-            for hpr_idx, data in raw_peaks_prod.groupby("hpr_idx")[tof_intensity]:
-                yield HPRbyte(
-                    cycle=cycle,
-                    step=step,
-                    hpr_idx=hpr_idx,
-                    scans=data.index.to_numpy().astype(np.uint32),
-                    tofs=data.tof.to_numpy(),
-                    intensities=data.intensity.to_numpy(),
-                )
 
-
-    def iter_hpr_events(
+    def iter_nonempty_hpr_events(
         self,
+        columns: tuple[str]=("scan","tof","intensity"),
         hpr_indices: list[int]|int|typing.Iterable[int]|None = None,
         progressbar: bool=False,
-    ) -> typing.Iterator:
+    ) -> typing.Iterator[HPR_FRAME_META_AND_DATA_TYPE]:
 
         if hpr_indices is None:
             hpr_indices = list(self.HPR_intervals.index)
@@ -303,26 +271,26 @@ class HPRS:
         else:
             hpr_indices = list(hpr_indices)
 
-        infos = self.MS2_INFO.itertuples(index=False, name="FrameMeta")
+        metas = self.dia_run.DiaFrameMsMsInfo.itertuples(index=False, name="Meta")
         if progressbar:
-            infos = tqdm(infos, total=len(self.MS2_INFO))
+            metas = tqdm(metas, total=len(self.dia_run.DiaFrameMsMsInfo))
 
-        for frame_info in infos:
-            X = self.dia_run.opentims.query(
-                frame_info.Frame,
-                columns=["scan","tof","intensity"],
-            )
-            # obviously we will reuse this for different HPRs
+        for meta in metas:
+            # instead of pulling X multiple times for each HPR, do it once:
+            X = self.dia_run.opentims.query(meta.Frame, columns=columns)
             for hpr_idx in hpr_indices:
                 try:
-                    min_scan, max_scan = self.hpr_step_to_scan_min_max_scan[ 
-                        (hpr_idx, frame_info.step)
+                    min_scan, max_scan = self.hpr_step_to_scan_min_max[ 
+                        (hpr_idx, meta.step)
                     ] 
                     min_idx, max_idx = binary_search(X["scan"], min_scan, max_scan+1)
                     if min_idx < max_idx:
+                        # reporting only cycle and step is necessary for compatibility with
+                        # 'iter_hpr_events_including_empty'
                         yield (
                             hpr_idx,
-                            frame_info,
+                            meta.cycle,
+                            meta.step,
                             {
                                 col: data[min_idx: max_idx]
                                 for col, data in X.items()
@@ -332,67 +300,62 @@ class HPRS:
                     pass
 
 
-    def iter_hprs_per_cycle_step_v2(
-        self,
-        columns = ("scan","tof","intensity"),
-    ) -> typing.Iterator[HPRbyte]:
-        """Iterate the tuples of cycle, step, hpr numbers, and the resulting hypothetical precursor range data.
-        """
-        cycle_step_tuples = zip(
-            self.dia_run.DiaFrameMsMsInfo.cycle, 
-            self.dia_run.DiaFrameMsMsInfo.step,
-        )
-        assert "scan" in columns, "The columns you provide must include 'scan'."
-        for cycle, step in cycle_step_tuples:
-            frame_ids = self.dia_run.cycle_step_to_ms2_frame(cycle, step)
-            raw_peaks = self.dia_run.opentims.query(frame_ids, columns=columns)
-            raw_peaks = pd.DataFrame(raw_peaks) 
-            raw_peaks = raw_peaks.set_index("scan")
-            raw_peaks_prod = pd.merge(
-                self.step_to_scan_hpr_dfs[step],
-                raw_peaks,
-                left_index=True,
-                right_index=True,
-            )
-            for hpr_idx, data in raw_peaks_prod.groupby("hpr_idx"):
-                yield (
-                    hpr_idx,
-                    cycle,
-                    step,
-                    data,
-                )
+    def iter_hpr_events(
+        self, 
+        columns: tuple[str]=("scan","tof","intensity"),
+        hpr_indices: list[int]|int|typing.Iterable[int]|None = None,
+        progressbar: bool=False,
+    ) -> typing.Iterator[HPR_FRAME_META_AND_DATA_TYPE]:
+        
+        if hpr_indices is None:
+            hpr_indices = list(self.HPR_intervals.index)
+        elif isinstance(hpr_indices, int):
+            hpr_indices = [int]
+        elif isinstance(hpr_indices, list):
+            pass
+        else:
+            hpr_indices = list(hpr_indices)
 
-    def full_iter(self, verbose: bool=False) -> typing.Iterator[tuple[int,int,int,np.array,np.array,np.array]]:
         cycle_step_tuples = zip(
             self.dia_run.DiaFrameMsMsInfo.cycle, 
             self.dia_run.DiaFrameMsMsInfo.step,
         )
-        if verbose:
+
+        if progressbar:
             cycle_step_tuples = tqdm(
                 cycle_step_tuples,
                 total=len(self.dia_run.DiaFrameMsMsInfo)
             )
-        empty_scan = np.array([], dtype=np.uint32)
-        empty_tof = np.array([], dtype=np.uint32)
-        empty_intensities = np.array([], dtype=np.uint32)
-        hpr_bytes = iter(self.iter_hprs_per_cycle_step)
-        finished_hpr_bytes = False
-        try:
-            hpr_byte = next(hpr_bytes)
-        except StopIteration:
-            finished_hpr_bytes = True
-        for cycle, step in cycle_step_tuples:
-            for hpr_idx in self.hpr_indices:
-                if not finished_hpr_bytes and hpr_byte.cycle == cycle and hpr_byte.step == step and hpr_byte.hpr_idx == hpr_idx:
-                    yield hpr_byte
-                    try:
-                        hpr_byte = next(hpr_bytes)
-                    except StopIteration:
-                        finished_hpr_bytes = True
-                else:
-                    yield (cycle, step, hpr_idx, empty_scan, empty_tof, empty_intensities)
+        
+        empty_data = {
+            "scan": np.array([], dtype=np.uint32),
+            "tof": np.array([], dtype=np.uint32),
+            "intensity": np.array([], dtype=np.uint32)
+        }
+        hprs = iter(self.iter_nonempty_hpr_events(columns, hpr_indices, progressbar=False))
+        finished_hprs = False
 
-    def iter_nonempty_aggregated_cycle_hpr_data(self) -> typing.Iterator[ tuple[int,int,FrameDataset] ]:
+        try:
+            curr_hpr_idx, curr_cycle, curr_step, curr_data = next(hprs)
+        except StopIteration:
+            finished_hprs = True
+        for cycle, step in cycle_step_tuples:
+            for hpr_idx in hpr_indices:
+                if not finished_hprs and curr_cycle == cycle and curr_step == step and curr_hpr_idx == hpr_idx:
+                    yield curr_hpr_idx, curr_cycle, curr_step, curr_data
+                    try:
+                        curr_hpr_idx, curr_cycle, curr_step, curr_data = next(hprs)
+                    except StopIteration:
+                        finished_hprs = True
+                else:
+                    yield (hpr_idx, cycle, step, empty_data)
+
+
+    def iter_nonempty_aggregated_cycle_hpr_data(
+        self,
+        columns: tuple[str]=("scan","tof","intensity"),
+        progressbar: bool=False,
+    ) -> typing.Iterator[HPR_FRAME_META_AND_DATA_TYPE]:
         """
         Iterate over nonempty hypothetical precursor ranges datasets aggregate within each cycle.
         
@@ -422,18 +385,15 @@ class HPRS:
             right_on="Id"
         ).groupby("cycle").NumScans.max().to_numpy()
 
-
         
         for cycle, ms2_frame_ids_per_cycle in self.dia_run.DiaFrameMsMsInfo.groupby("cycle")["Frame"]:
-            # getting indices:
-            # steps_per_cycle = np.arange(self.dia_run.min_step, self.dia_run.max_step+1)
-            # ms2_frame_ids_per_cycle = self.dia_run.cycle_step_to_ms2_frame(cycle,steps_per_cycle)
             ms1_frame_id_in_this_cycle = self.dia_run.cycle_to_ms1_frame(cycle)
 
             # getting raw data
             raw_peaks_per_cycle = self.dia_run.opentims.query(
                 frames=ms2_frame_ids_per_cycle,
-                columns=("frame","scan","tof","intensity") )
+                columns=("frame","scan","tof","intensity")
+            )
             raw_peaks_per_cycle['step'] = self.dia_run.ms2_frame_to_step(raw_peaks_per_cycle["frame"])
             del raw_peaks_per_cycle['frame']# not needed, steps in a given cycle encode it
             raw_peaks_per_cycle = pd.DataFrame(raw_peaks_per_cycle)
@@ -446,14 +406,25 @@ class HPRS:
             #NOTE: here we OMIT STEPS: but we might not do it and save it?    we can put it somewher here   ⬇
             for hpr_idx, hpr_data_per_cycle in raw_hprs_peaks.groupby("hpr_idx")[ ["scan","tof","intensity", ] ]:
                 hpr_data_per_cycle = dedup( hpr_data_per_cycle )
-                framedataset = FrameDataset(
-                    total_scans = cycle2maxNumScans[cycle],
-                    src_frame = ms1_frame_id_in_this_cycle,
-                    df=hpr_data_per_cycle,
+                
+                # framedataset = FrameDataset(
+                #     total_scans = cycle2maxNumScans[cycle],
+                #     src_frame = ms1_frame_id_in_this_cycle,
+                #     df=hpr_data_per_cycle,
+                # )
+                # yield CycleAggregatedHPR(cycle, hpr_idx, framedataset)
+                yield (
+                    cycle,
+                    hpr_idx,
+                    cycle2maxNumScans[cycle],
+                    ms1_frame_id_in_this_cycle,
+                    hpr_data_per_cycle,
                 )
-                yield CycleAggregatedHPR(cycle, hpr_idx, framedataset)
 
-    def iter_all_aggregated_cycle_hpr_data(self, verbose: bool=False) -> typing[tuple[int,int,FrameDataset]]:
+    def iter_all_aggregated_cycle_hpr_data(
+        self, 
+        progressbar: bool=False,
+    ) -> typing.Iterator[HPR_FRAME_META_AND_DATA_TYPE]:
         """
         Iterate over all hypothetical precursor ranges datasets aggregate within each cycle.
 
@@ -472,7 +443,7 @@ class HPRS:
         cycles = np.arange(self.dia_run.min_cycle, self.dia_run.max_cycle+1)
         hpr_indices = self.hpr_indices
         cycle_hpr_idx_tuples = itertools.product(cycles, hpr_indices)
-        if verbose:
+        if progressbar:
             cycle_hpr_idx_tuples = tqdm(cycle_hpr_idx_tuples, total=len(cycles)*len(hpr_indices))
 
         # guards
@@ -576,6 +547,8 @@ def write_hprs(
             compression_level=compression_level,
         ) for hpr_index, outcome_folder in zip(hprs.HPR_intervals.index, result_folders)
     }
+
+    
 
     if combine_steps_per_cycle:
         for cycle, hpr_idx, frame_dataset in itertools.islice(

@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from savetimspy.get_frames import write_frames
 from savetimspy.write_frame_datasets import (
-    FrameDataset,
+    FrameSaveBundle,
     write_frame_datasets
 )
 
@@ -54,32 +54,30 @@ def write_ms2(
 def combined_ms2_frames_generator(
     source: pathlib.Path,
     verbose: bool=False,
-) -> typing.Iterator[FrameDataset]:
+) -> typing.Iterator[FrameSaveBundle]:
     dia_run = DiaRun(source)
-    NumScans = dia_run.Frames.NumScans.values
-    cycles = range(dia_run.no_cycles)
+    NumScans = dia_run.Frames.NumScans.to_numpy()
     dedup = lambda df: df.groupby(
             ["scan","tof"],
             sort=True,
             as_index=False
         ).intensity.sum()
+    meta_per_cycle = dia_run.DiaFrameMsMsInfo.groupby("cycle")
     if verbose:
-        cycles = tqdm(cycles)
-    for cycle in cycles:
-        ms2_frames_in_cycle = tuple(
-            dia_run.cycle_step_to_ms2_frame(cycle, step)
-            for step in range(dia_run.min_step, dia_run.max_step+1) 
-        )
+        meta_per_cycle = tqdm(meta_per_cycle)
+    for cycle, meta in meta_per_cycle:
         df = pd.DataFrame(dia_run.opentims.query(
-            ms2_frames_in_cycle,
+            meta.Frame,
             columns=["scan","tof","intensity"]
         ))
         df = dedup(df)
         ms1_frame_id = dia_run.cycle_to_ms1_frame(cycle)
-        yield FrameDataset(
+        yield FrameSaveBundle(
             total_scans=NumScans[ms1_frame_id-1],
             src_frame=ms1_frame_id,
-            df=df,
+            scans=df.scan.to_numpy(),
+            tofs=df.tof.to_numpy(),
+            intensities=df.intensity.to_numpy(),
         )
 
 

@@ -1,6 +1,9 @@
+import numpy as np
+import numpy.typing as npt
 import pathlib
 
 from collections import namedtuple
+from dataclasses import dataclass
 from opentimspy import OpenTIMS
 from typing import Iterable
 
@@ -10,14 +13,23 @@ from savetimspy.common_assertions import (
 )
 
 
-FrameDataset = namedtuple(
-    "FrameDataset", 
-    "total_scans src_frame df"
-)
+# this is not very performant, but that is not important.
+# I simply want to have type annotation.
+@dataclass
+class FrameSaveBundle:
+    """
+    A base unit of information for saving one frame.
+    """
+    total_scans: int
+    src_frame: int
+    scans: npt.NDArray[np.uint32]
+    tofs: npt.NDArray[np.uint32]
+    intensities: npt.NDArray[np.uint32]
+
 
 
 def write_frame_datasets(
-    frame_datasets: Iterable[FrameDataset],
+    frame_datasets: Iterable[FrameSaveBundle],
     source: pathlib.Path,
     target: pathlib.Path,
     compression_level: int=1,
@@ -40,9 +52,9 @@ def write_frame_datasets(
                 if set_MsMsType_to_0:
                     kwargs["MsMsType"] = 0
                 saviour.save_frame_tofs(
-                    scans=frame_dataset.df.scan.to_numpy(),
-                    tofs=frame_dataset.df.tof.to_numpy(),
-                    intensities=frame_dataset.df.intensity.to_numpy(),
+                    scans=frame_dataset.scan,
+                    tofs=frame_dataset.tof,
+                    intensities=frame_dataset.intensity,
                     total_scans=frame_dataset.total_scans,
                     src_frame=frame_dataset.src_frame,
                     run_deduplication=run_deduplication,
