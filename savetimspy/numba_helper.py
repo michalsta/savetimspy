@@ -122,3 +122,26 @@ def get_realdata(peak_cnts, interleaved):
         real_data[rd_idx] = back_data[bd_idx]
         bd_idx += 4
     return real_data
+
+
+# this really works faster
+@numba.jit
+def binary_search(scans, min_scan, max_scan):
+    return np.searchsorted(scans, (min_scan, max_scan) )
+
+
+@numba.jit
+def linear_search(scans, min_scan, max_scan):
+    for i in range(len(scans)):
+        if scans[i] >= min_scan:
+            break
+        else:
+            i+= 1
+    min_idx = i
+    for j in range(min_idx, len(scans)):
+        if scans[j] >= min_scan:
+            break
+        else:
+            j+= 1
+    max_idx = j
+    return min_idx, max_idx

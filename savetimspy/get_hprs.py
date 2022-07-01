@@ -14,7 +14,10 @@ from savetimspy.common_assertions import (
 )
 from savetimspy.fs_ops import reset_max_open_soft_file_handles
 from savetimspy.interval_ops import NestedContainmentList
-from savetimspy.numba_helper import coordinatewise_range
+from savetimspy.numba_helper import (
+    coordinatewise_range, 
+    binary_search,
+)
 from savetimspy.pandas_ops import is_sorted
 from dia_common.dia_main import DiaRun
 from savetimspy.writer import SaveTIMS
@@ -69,14 +72,15 @@ class HPRS:
         window_width: float|None = 36.0,
         min_scan: int|None = 1,
         max_scan: int|None = None,
+        right_quadrupole_buffer: float=0.01,
         verbose: bool = False,
     ):
-        self.HPR_intervals = HPR_intervals
-        self.hpr_indices = HPR_intervals.index.to_numpy()
-        self.dia_run = dia_run
+        self.HPR_intervals  = HPR_intervals
+        self.hpr_indices    = HPR_intervals.index.to_numpy()
+        self.dia_run        = dia_run
         self.min_coverage_fraction = min_coverage_fraction
-        self.window_width = window_width
-        self.verbose = verbose
+        self.window_width   = window_width
+        self.verbose        = verbose
 
         # defining quadrupole positions
         self.DiaFrameMsMsWindows = self.dia_run.DiaFrameMsMsWindows
@@ -85,13 +89,13 @@ class HPRS:
             quad_borders_exp = \
             """
                 quadrupole_start = IsolationMz - IsolationWidth / 2.0
-                quadrupole_stop  = IsolationMz + IsolationWidth / 2.0
+                quadrupole_stop  = IsolationMz + IsolationWidth / 2.0 - @right_quadrupole_buffer
             """
         else:
             quad_borders_exp = \
             """
                 quadrupole_start = IsolationMz - @self.window_width / 2.0
-                quadrupole_stop  = IsolationMz + @self.window_width / 2.0
+                quadrupole_stop  = IsolationMz + @self.window_width / 2.0 - @right_quadrupole_buffer
             """
         self.DiaFrameMsMsWindows = self.DiaFrameMsMsWindows.eval(quad_borders_exp)
 
@@ -102,6 +106,7 @@ class HPRS:
 
         self.scans = np.arange(self.min_scan, self.max_scan+1)
         # Mapping (step,scan) to actual quadrupole positions
+        
         self.StepScanToQuadrupole = self.DiaFrameMsMsWindows.loc[
             np.repeat(
                 self.DiaFrameMsMsWindows.index,
@@ -115,11 +120,14 @@ class HPRS:
                 "IsolationMz",
             ]
         ].reset_index().rename(columns={"index":"quadrupole_idx"})
+        
         self.StepScanToQuadrupole["scan"] = coordinatewise_range(
             # silly convention: scans start from 1
             self.DiaFrameMsMsWindows.ScanNumBegin.to_numpy() + 1,
             self.DiaFrameMsMsWindows.ScanNumEnd.to_numpy() + 1,
         )
+        self.StepScanToQuadrupole = self.StepScanToQuadrupole.query("@self.min_scan <= scan and scan <= @self.max_scan").reset_index(drop=True)
+
         self.StepScanToQuadrupolePosition = self.StepScanToQuadrupole.pivot(
             index='scan',
             columns="step",
@@ -142,14 +150,20 @@ class HPRS:
         #   * initially every intersecting quadrupole position is valid
         #   * shortlisting quadrupole positions that intersect with the quadrupole above a given percentage of length.
         interval_db = NestedContainmentList.from_df(HPR_intervals)
+        
+        # these are indices of self.StepScanToQuadrupole, not quadrupole_idx: good
         StepScanToQuadrupole_idxs, hpr_idxs = interval_db.query_df(
-            self.StepScanToQuadrupole[["quadrupole_start", "quadrupole_stop"]]
+            self.StepScanToQuadrupole[ ["quadrupole_start", "quadrupole_stop"] ]
         )
 
         self.hpr_quadrupole_matches = pd.concat([
             self.StepScanToQuadrupole.loc[StepScanToQuadrupole_idxs].reset_index(),
             self.HPR_intervals.loc[hpr_idxs].reset_index()
         ], axis=1)
+
+        for (hpr_idx,step), scans in self.hpr_quadrupole_matches.groupby(["hpr_idx","step"]).scan:
+            assert len(scans) == scans.max()-scans.min()+1, f"Steps do not form a consecutive integer sequence in case of hpr_idx={hpr_idx} and step={step}"
+
         self.hpr_quadrupole_matches["quadrupole_coverage_dalton"] = \
             np.minimum(self.hpr_quadrupole_matches.hpr_stop, 
                        self.hpr_quadrupole_matches.quadrupole_stop) - \
@@ -185,6 +199,18 @@ class HPRS:
         for step, step_to_scan_hpr_df in enumerate(self.step_to_scan_hpr_dfs):
             if len(step_to_scan_hpr_df):# some lists can be empty: but we need them anyway for the indexing.
                 assert is_sorted(step_to_scan_hpr_df.index.values), f"Step's {step} step_to_scan_hpr_df scan index ain't sorted."
+
+        self.hpr_step_to_scan_min_max_scan = {
+            (hpr_idx, step): (np.min(scans), np.max(scans))
+            for (hpr_idx, step), scans in self.hpr_quadrupole_matches.groupby(["hpr_idx", "step"]).scan
+        }
+
+        self.MS2_INFO = self.dia_run.DiaFrameMsMsInfo
+
+    def hpr_idx_scan_to_step(self) -> dict[tuple[int], tuple[int]]:
+        return {k: tuple(v) 
+            for k, v in self.hpr_quadrupole_matches.groupby(["hpr_idx","scan"]).step
+        }
 
     def plot_scans_and_steps_used_by_hypothetical_precursor_range(
         self, 
@@ -228,10 +254,13 @@ class HPRS:
         if show:
             plt.show()
 
-    def iter_hprs_per_cycle_step(self) -> typing.Iterator[HPRbyte]:
+    #TODO: get rid of this?
+    def iter_hprs_per_cycle_step(
+        self,
+        columns = ("scan","tof","intensity"),
+    ) -> typing.Iterator[HPRbyte]:
         """Iterate the tuples of cycle, step, hpr numbers, and the resulting hypothetical precursor range data.
         """
-        cols_to_choose = ("scan","tof","intensity")
         tof_intensity = ["tof","intensity"]
         cycle_step_tuples = zip(
             self.dia_run.DiaFrameMsMsInfo.cycle, 
@@ -239,7 +268,7 @@ class HPRS:
         )
         for cycle, step in cycle_step_tuples:
             frame_ids = self.dia_run.cycle_step_to_ms2_frame(cycle, step)
-            raw_peaks = self.dia_run.opentims.query(frame_ids, columns=cols_to_choose)
+            raw_peaks = self.dia_run.opentims.query(frame_ids, columns=columns)
             raw_peaks = pd.DataFrame(raw_peaks) 
             raw_peaks = raw_peaks.set_index("scan")
             raw_peaks_prod = pd.merge(
@@ -256,6 +285,81 @@ class HPRS:
                     scans=data.index.to_numpy().astype(np.uint32),
                     tofs=data.tof.to_numpy(),
                     intensities=data.intensity.to_numpy(),
+                )
+
+
+    def iter_hpr_events(
+        self,
+        hpr_indices: list[int]|int|typing.Iterable[int]|None = None,
+        progressbar: bool=False,
+    ) -> typing.Iterator:
+
+        if hpr_indices is None:
+            hpr_indices = list(self.HPR_intervals.index)
+        elif isinstance(hpr_indices, int):
+            hpr_indices = [int]
+        elif isinstance(hpr_indices, list):
+            pass
+        else:
+            hpr_indices = list(hpr_indices)
+
+        infos = self.MS2_INFO.itertuples(index=False, name="FrameMeta")
+        if progressbar:
+            infos = tqdm(infos, total=len(self.MS2_INFO))
+
+        for frame_info in infos:
+            X = self.dia_run.opentims.query(
+                frame_info.Frame,
+                columns=["scan","tof","intensity"],
+            )
+            # obviously we will reuse this for different HPRs
+            for hpr_idx in hpr_indices:
+                try:
+                    min_scan, max_scan = self.hpr_step_to_scan_min_max_scan[ 
+                        (hpr_idx, frame_info.step)
+                    ] 
+                    min_idx, max_idx = binary_search(X["scan"], min_scan, max_scan+1)
+                    if min_idx < max_idx:
+                        yield (
+                            hpr_idx,
+                            frame_info,
+                            {
+                                col: data[min_idx: max_idx]
+                                for col, data in X.items()
+                            }
+                        )
+                except KeyError:# some hprs are simply not present in a given step.
+                    pass
+
+
+    def iter_hprs_per_cycle_step_v2(
+        self,
+        columns = ("scan","tof","intensity"),
+    ) -> typing.Iterator[HPRbyte]:
+        """Iterate the tuples of cycle, step, hpr numbers, and the resulting hypothetical precursor range data.
+        """
+        cycle_step_tuples = zip(
+            self.dia_run.DiaFrameMsMsInfo.cycle, 
+            self.dia_run.DiaFrameMsMsInfo.step,
+        )
+        assert "scan" in columns, "The columns you provide must include 'scan'."
+        for cycle, step in cycle_step_tuples:
+            frame_ids = self.dia_run.cycle_step_to_ms2_frame(cycle, step)
+            raw_peaks = self.dia_run.opentims.query(frame_ids, columns=columns)
+            raw_peaks = pd.DataFrame(raw_peaks) 
+            raw_peaks = raw_peaks.set_index("scan")
+            raw_peaks_prod = pd.merge(
+                self.step_to_scan_hpr_dfs[step],
+                raw_peaks,
+                left_index=True,
+                right_index=True,
+            )
+            for hpr_idx, data in raw_peaks_prod.groupby("hpr_idx"):
+                yield (
+                    hpr_idx,
+                    cycle,
+                    step,
+                    data,
                 )
 
     def full_iter(self, verbose: bool=False) -> typing.Iterator[tuple[int,int,int,np.array,np.array,np.array]]:
@@ -416,6 +520,7 @@ def write_hprs(
     max_scan: int|None = None,
     compression_level: int=1,
     make_all_frames_seem_unfragmented: bool=True,
+    right_quadrupole_buffer: float=0.001,
     verbose: bool=False,
     _max_iterations: int|None=None,
 ) -> list[pathlib.Path]:
@@ -459,6 +564,7 @@ def write_hprs(
         dia_run = dia_run,
         min_coverage_fraction = min_coverage_fraction,
         window_width = window_width,
+        right_quadrupole_buffer=right_quadrupole_buffer,
         verbose=verbose,
     )
 

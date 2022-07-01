@@ -71,7 +71,7 @@ hprs = HPRS(
     verbose=True,
 )
 # old10 = list(itertools.islice(hprs.iter_nonempty_aggregated_cycle_hpr_data(), 10))
-new10 = list(itertools.islice(hprs.iter_nonempty_aggregated_cycle_hpr_data(), 10))
+# new10 = list(itertools.islice(hprs.iter_nonempty_aggregated_cycle_hpr_data(), 10))
 
 
 
@@ -175,10 +175,6 @@ plt.show()
 
 
 
-def point_to_intercept_and_slope(x0,y0,x1,y1):
-    slope = (y1-y0)/(x1-x0)
-    intercept = y0 - slope*x0
-    return intercept, slope
 
 b0,a0 = point_to_intercept_and_slope(x0=250, y0=0.6, x1=500, y1=1.0)
 b1,a1 = point_to_intercept_and_slope(x0=500, y0=1.0, x1=1_000, y1=1.4)

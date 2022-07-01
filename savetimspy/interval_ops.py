@@ -8,8 +8,8 @@ class NestedContainmentList:
     """A wrapper around ncls.FNCLS."""
     def __init__(
         self, 
-        starts: npt.NDArray[float],
-        stops: npt.NDArray[float],
+        starts:  npt.NDArray[float],
+        stops:   npt.NDArray[float],
         indices: npt.NDArray[int]|None = None,
     ):
         """ 
