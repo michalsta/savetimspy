@@ -13,7 +13,7 @@ import typing
 from savetimspy.common_assertions import (
     assert_minimal_input_for_clusterings_exist,
 )
-from savetimspy.fs_ops import reset_max_open_soft_file_handles
+from savetimspy.fs_ops import get_limits, set_soft_limit
 from savetimspy.interval_ops import NestedContainmentList
 from savetimspy.numba_helper import (
     coordinatewise_range, 
@@ -24,7 +24,6 @@ from savetimspy.pandas_ops import is_sorted
 from dia_common.dia_main import DiaRun
 from savetimspy.writer import SaveTIMS
 from savetimspy.write_frame_datasets import FrameSaveBundle
-
 
 SCAN_TOF_INTENSITY_ARRAYS_DICT_np_uint32 = dict[str, npt.NDArray[np.uint32]]
 
@@ -105,15 +104,12 @@ class HPRS:
         max_scan: int|None = None,
         right_quadrupole_buffer: float=0.01,
         hpr_idx_scan_to_max_steps: int=3,# TODO: and inference would be better than a hardcoded value.
-        verbose: bool = False,
     ):
         self.HPR_intervals  = HPR_intervals
         self.hpr_indices    = HPR_intervals.index.to_numpy()
         self.dia_run        = dia_run
         self.min_coverage_fraction = min_coverage_fraction
         self.window_width   = window_width
-        self.verbose        = verbose
-
         # defining quadrupole positions
         self.DiaFrameMsMsWindows = self.dia_run.DiaFrameMsMsWindows
         self.steps = self.DiaFrameMsMsWindows.step.unique()
@@ -279,7 +275,7 @@ class HPRS:
     def plot_scans_and_steps_used_by_hypothetical_precursor_range(
         self, 
         hpr_idx: int,
-        fontsize: int=12,
+        suptitle_fontsize: int=12,
         show: bool=True,
         **kwargs
     ) -> None:
@@ -287,26 +283,23 @@ class HPRS:
 
         Arguments:
             hpr_idx (int): The number of the hypothetical precursor range.
-            fontsize (int): Suptitle font size.
+            suptitle_fontsize (int): Suptitle font size.
             show (bool): Show the plot.
             **kwargs: Other parameters to the ax.matshow function used underneath.
         """
         import matplotlib.pyplot as plt
         assert hpr_idx in self.HPR_intervals.index, f"The range number you provided, hpr_idx={hpr_idx}, is outside the available range, i.e. between {self.HPR_intervals.index.min()} and {self.HPR_intervals.index.max()}."
         start, stop = self.HPR_intervals.loc[hpr_idx]
-        
-        W = self.get_subframe_df(hpr_idx)
-        plt.matshow(W, aspect='auto', origin='lower',**kwargs)
+        subframe_df = self.get_subframe_df(hpr_idx)
+        plt.matshow(subframe_df, aspect='auto', origin='lower',**kwargs)
         plt.yticks(ticks=self.scans-1, labels=self.scans)
         plt.suptitle(
-                f"HPR [{start}, {stop}], Minimal Coverage = {100*self.min_coverage_fraction}%", 
-                fontsize=fontsize
-            )
+            f"HPR [{start}, {stop}], Minimal Coverage = {100*self.min_coverage_fraction}%", 
+            fontsize=suptitle_fontsize
+        )
         plt.xlabel("Step, i.e. MIDIA diagonal")
         plt.ylabel("Scan Number")
         plt.show()
-
-
         if show:
             plt.show()
 
@@ -399,7 +392,7 @@ def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
     return max( len(str(x)) for x in xx )
 
 
-
+# TODO: add option to immediately translate hpr results into hdf.
 def write_hprs(
     HPR_intervals: pd.DataFrame,
     source: pathlib.Path,
@@ -414,9 +407,9 @@ def write_hprs(
     right_quadrupole_buffer: float=0.001,
     verbose: bool=False,
     _max_iterations: int|None=None,
+    _soft_limit: int=4096,
 ) -> list[pathlib.Path]:
     """
-    
     Arguments:
         HPR_intervals (pd.DataFrame): A data frame with columns 'hpr_start' and 'hpr_stop' describing the beginning and the end of intervals.
         source (pathlib.Path): Path to source .d folder.
@@ -450,16 +443,21 @@ def write_hprs(
         preload_data=False,
         columns=("frame", "scan", "tof", "intensity"),
     )
+    frame_to_NumScans = dict(zip(dia_run.Frames.Id, dia_run.Frames.NumScans))
+
     hprs = HPRS(
         HPR_intervals = HPR_intervals,
         dia_run = dia_run,
         min_coverage_fraction = min_coverage_fraction,
         window_width = window_width,
         right_quadrupole_buffer=right_quadrupole_buffer,
-        verbose=verbose,
     )
+    soft_limit, hard_limit = get_limits()
+    if soft_limit < _soft_limit:
+        set_soft_limit(_soft_limit)
 
-    reset_max_open_soft_file_handles(verbose=verbose)
+    if verbose:
+        print("Copying HPR analysis.tdf.")
     saviours = {
         hpr_index: SaveTIMS(
             opentims_obj=hprs.dia_run.opentims,
@@ -468,24 +466,25 @@ def write_hprs(
         ) for hpr_index, outcome_folder in zip(hprs.HPR_intervals.index, result_folders)
     }
 
-    
-
+    #TODO: in absence of only some hprs, might only create those missing...
     if combine_steps_per_cycle:
-        for cycle, hpr_idx, frame_dataset in itertools.islice(
-            hprs.iter_all_aggregated_cycle_hpr_data(verbose=verbose),
+        for hpr_idx, cycle, data in itertools.islice(
+            hprs.iter_cycle_aggregate_hprs(progressbar=verbose),
             _max_iterations,
         ):
-            saviour = saviours[hpr_idx]
-            saviour.save_frame_tofs(
-                scans=frame_dataset.df.scan.to_numpy(),
-                tofs=frame_dataset.df.tof.to_numpy(),
-                intensities=frame_dataset.df.intensity.to_numpy(),
-                total_scans=frame_dataset.total_scans,
-                src_frame=frame_dataset.src_frame,
+            ms1_frame_in_the_given_cycle = hprs.dia_run.cycle_to_ms1_frame(cycle)
+            saviours[hpr_idx].save_frame_tofs(
+                scans=data["scan"],
+                tofs=data["tof"],
+                intensities=data["intensity"],
+                total_scans=frame_to_NumScans[ms1_frame_in_the_given_cycle],
+                src_frame=ms1_frame_in_the_given_cycle,
                 run_deduplication=False,
                 MsMsType=0,
             )
     else:
+        # TODO finish this.
+        raise NotImplementedError("You Foul! This was not implemented!")
         MS2Frames = pd.DataFrame(hprs.dia_run.opentims.frames).query("MsMsType > 0")
         cycle_step_to_NumScans = dict(zip(
             zip(*hprs.dia_run.ms2_frame_to_cycle_step(MS2Frames.Id)),
