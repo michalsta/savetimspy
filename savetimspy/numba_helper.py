@@ -1,5 +1,5 @@
+import cmath
 import numba
-#from numba.typed import Dict
 import numpy as np
 import numpy.typing as npt
 from collections import Counter
@@ -145,3 +145,37 @@ def linear_search(scans, min_scan, max_scan):
             j+= 1
     max_idx = j
     return min_idx, max_idx
+
+
+@numba.jit(nopython=True)
+def dedup_sorted(xx, yy, weights, order):
+    xx_res = []
+    yy_res = []
+    ww_res = []
+    x_prev = -cmath.inf
+    y_prev = -cmath.inf
+    w_agg = 0
+    for i in range(len(xx)):    
+        w_agg += weights[order[i]]
+        x = xx[order[i]]
+        y = yy[order[i]]
+        if x > x_prev or y > y_prev:
+            xx_res.append(x)
+            yy_res.append(y)
+            ww_res.append(w_agg)
+            w_agg = 0
+        x_prev = x
+        y_prev = y
+    if w_agg != 0:
+        xx_res.append(x)
+        yy_res.append(y)
+        ww_res.append(w_agg)
+    return (
+        np.array(xx_res, dtype=xx.dtype),
+        np.array(yy_res, dtype=yy.dtype),
+        np.array(ww_res, dtype=weights.dtype)
+    )
+
+def dedup_v2(xx, yy, weights):
+    order = np.lexsort([yy, xx])
+    return dedup_sorted(xx, yy, weights, order)
