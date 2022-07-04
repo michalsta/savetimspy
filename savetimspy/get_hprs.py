@@ -446,7 +446,6 @@ def write_hprs(
         preload_data=False,
         columns=("frame", "scan", "tof", "intensity"),
     )
-    frame_to_NumScans = dict(zip(dia_run.Frames.Id, dia_run.Frames.NumScans))
 
     hprs = HPRS(
         HPR_intervals = HPR_intervals,
@@ -470,6 +469,7 @@ def write_hprs(
         ) for hpr_index, outcome_folder in zip(hprs.HPR_intervals.index, result_folders)
     }
 
+    frame_to_NumScans = dict(zip(dia_run.Frames.Id, dia_run.Frames.NumScans))
     #TODO: in absence of only some hprs, might only create those missing...
     if combine_steps_per_cycle:
         for hpr_idx, cycle, data in itertools.islice(
@@ -490,6 +490,7 @@ def write_hprs(
     else:
         # TODO finish this.
         raise NotImplementedError("You Foul! This was not implemented!")
+
         MS2Frames = pd.DataFrame(hprs.dia_run.opentims.frames).query("MsMsType > 0")
         cycle_step_to_NumScans = dict(zip(
             zip(*hprs.dia_run.ms2_frame_to_cycle_step(MS2Frames.Id)),
@@ -512,9 +513,11 @@ def write_hprs(
             )
 
     hprs.HPR_intervals.to_csv(path_or_buf=target/"HPR_intervals.csv")
-    for savious in saviours.values():
+    if verbose:
+        print("Updating the analysis.tdf files: writing down the information.")
+    for saviour in saviours.values():
         # could pass in _Frames below as argument.
-        savious.close()# this updates target analysis.tdf
+        saviour.close()# this updates target analysis.tdf
     del saviours
 
     return result_folders

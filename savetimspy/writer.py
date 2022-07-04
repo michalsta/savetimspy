@@ -138,11 +138,12 @@ class SaveTIMS:
             self.tdf_bin.close()
             self.tdf_bin = None
         if not self.sqlcon is None:
-            update_frames_table(
-                frame_row_updates=self.frame_row_updates,
-                sqlite_connection=self.sqlcon,
-                _Frames=_Frames,
-            )
+            if len(self.frame_row_updates) > 0:
+                update_frames_table(
+                    frame_row_updates=self.frame_row_updates,
+                    sqlite_connection=self.sqlcon,
+                    _Frames=_Frames,
+                )
             self.sqlcon.close()
             self.sqlcon = None
 
@@ -160,7 +161,7 @@ class SaveTIMS:
             return self.save_frame_tofs(frame_dict['scan'], frame_dict['tof'], frame_dict['intensity'], total_scans, copy_sql)
         return self.save_frame(frame_dict['scan'], frame_dict['mz'], frame_dict['intensity'], total_scans, copy_sql)
     
-    def save_frame(self, scans, mzs, intensities, total_scans, copy_sql = True):
+    def save_frame(self, scans, mzs, intensities, total_scans, copy_sql=True):
         tofs = np.empty(len(mzs), np.double)
         if not isinstance(mzs, np.ndarray):
             mzs = np.array(mzs, np.double)
@@ -194,6 +195,9 @@ class SaveTIMS:
         frame_start_pos = int(self.tdf_bin.tell())
         if run_deduplication:
             scans, tofs, intensities = deduplicate(scans, tofs, intensities)
+        assert len(scans) == len(tofs), "scans, tofs, and intensities must have the same length"
+        assert len(scans) == len(intensities), "scans, tofs, and intensities must have the same length"
+        num_peaks = len(scans)
 
         # Getting a map scan (list index) -> number of peaks
         peak_cnts = get_peak_cnts(total_scans, scans)
@@ -213,7 +217,7 @@ class SaveTIMS:
                 "Id": self.current_frame,
                 "TimsId": frame_start_pos,
                 "NumScans": total_scans,
-                "NumPeaks": len(tofs),
+                "NumPeaks": num_peaks,
                 "MaxIntensity": 0 if len(intensities) == 0 else int(np.max(intensities)),
                 "SummedIntensities": int(np.sum(intensities)),
                 "AccumulationTime": 100.0,
