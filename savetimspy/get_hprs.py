@@ -1,6 +1,7 @@
 from __future__ import annotations
 from tqdm import tqdm
 
+import cmath
 import collections
 import itertools
 import numpy as np
@@ -81,14 +82,6 @@ def combine_hpr_step_datasets(
         i += n 
     return (all_scans, all_tofs, all_intensities)
 
-
-def iter_agg(hpr_idx_to_step_datasets, cycle):
-    for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
-        agg_hpr = {}
-        agg_hpr["scan"], agg_hpr["tof"], agg_hpr["intensity"] = dedup_v2(
-            *combine_hpr_step_datasets(hpr_step_datasets)
-        )
-        yield hpr_idx, cycle, agg_hpr
 
 HPR_FRAME_META_AND_DATA_TYPE = tuple[int,int,int,dict[str, npt.NDArray]]
 
@@ -376,15 +369,28 @@ class HPRS:
             tuple: the index of the current hpr, the cycle, and the data consisting of a dictionary of numpy arrays with scans, tofs, and intensities.
             The step information is aggregated out: intensities corresponding to the same tuples (scan,tof) are summed up.
         """
+
+        def iter_agg(hpr_idx_to_step_datasets):
+            for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
+                agg_hpr = {}
+                agg_hpr["scan"], agg_hpr["tof"], agg_hpr["intensity"] = dedup_v2(
+                    *combine_hpr_step_datasets(hpr_step_datasets)
+                )
+                yield hpr_idx, agg_hpr
+
         hpr_idx_to_step_datasets = collections.defaultdict(list)
         prev_cycle = 0
         for hpr_idx, cycle, step, data in self.iter_hpr_events(hpr_indices, progressbar):
             if cycle > prev_cycle:
-                yield from iter_agg(hpr_idx_to_step_datasets, cycle)
+                for hpr_idx, agg_hpr in iter_agg(hpr_idx_to_step_datasets):
+                    yield hpr_idx, prev_cycle, agg_hpr
                 hpr_idx_to_step_datasets = collections.defaultdict(list)
+            
             hpr_idx_to_step_datasets[hpr_idx].append(data)
             prev_cycle = cycle
-        yield from iter_agg(hpr_idx_to_step_datasets, cycle)
+
+        for hpr_idx, agg_hpr in iter_agg(hpr_idx_to_step_datasets):
+            yield hpr_idx, prev_cycle, agg_hpr
 
 
 
@@ -452,6 +458,7 @@ def write_hprs(
         window_width = window_width,
         right_quadrupole_buffer=right_quadrupole_buffer,
     )
+    # highening limits on the number of simultaneously open file handlers on linux.
     soft_limit, hard_limit = get_limits()
     if soft_limit < _soft_limit:
         set_soft_limit(_soft_limit)
