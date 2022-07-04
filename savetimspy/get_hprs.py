@@ -376,19 +376,13 @@ class HPRS:
             )
         )
         hpr_idx_to_step_datasets = collections.defaultdict(list)
-        prev_cycle = 0
+        desired_hprs = set(self.HPR_intervals.index)
         for hpr_idx, cycle, step, data in self.iter_hpr_events(hpr_indices, progressbar):
-            if cycle > prev_cycle:
-                for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
-                    yield hpr_idx, prev_cycle, _aggregate(hpr_step_datasets)
-                hpr_idx_to_step_datasets = collections.defaultdict(list)
-            
             hpr_idx_to_step_datasets[hpr_idx].append(data)
-            prev_cycle = cycle
-
-        for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
-            yield hpr_idx, prev_cycle, _aggregate(hpr_step_datasets)
-
+            if set(hpr_idx_to_step_datasets) == desired_hprs:
+                for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
+                    yield hpr_idx, cycle, _aggregate(hpr_step_datasets)
+                hpr_idx_to_step_datasets = collections.defaultdict(list)
 
 
 def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
@@ -514,13 +508,13 @@ def write_hprs(
 
     hprs.HPR_intervals.to_csv(path_or_buf=target/"HPR_intervals.csv")
     if verbose:
-        print("Updating the analysis.tdf files: writing down the information.")
+        print("Updating the analysis.tdf files: in particular, writing down retention times of the MS1 frames within a given cycle.")
     for saviour in saviours.values():
         # could pass in _Frames below as argument.
         saviour.close()# this updates target analysis.tdf
-    del saviours
+    # del saviours
+    return result_folders, saviours
 
-    return result_folders
 
 
 def cli():
