@@ -369,28 +369,25 @@ class HPRS:
             tuple: the index of the current hpr, the cycle, and the data consisting of a dictionary of numpy arrays with scans, tofs, and intensities.
             The step information is aggregated out: intensities corresponding to the same tuples (scan,tof) are summed up.
         """
-
-        def iter_agg(hpr_idx_to_step_datasets):
-            for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
-                agg_hpr = {}
-                agg_hpr["scan"], agg_hpr["tof"], agg_hpr["intensity"] = dedup_v2(
-                    *combine_hpr_step_datasets(hpr_step_datasets)
-                )
-                yield hpr_idx, agg_hpr
-
+        _aggregate = lambda hpr_step_datasets: dict(
+            zip(
+                ("scan", "tof", "intensity"),
+                dedup_v2(*combine_hpr_step_datasets(hpr_step_datasets))
+            )
+        )
         hpr_idx_to_step_datasets = collections.defaultdict(list)
         prev_cycle = 0
         for hpr_idx, cycle, step, data in self.iter_hpr_events(hpr_indices, progressbar):
             if cycle > prev_cycle:
-                for hpr_idx, agg_hpr in iter_agg(hpr_idx_to_step_datasets):
-                    yield hpr_idx, prev_cycle, agg_hpr
+                for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
+                    yield hpr_idx, prev_cycle, _aggregate(hpr_step_datasets)
                 hpr_idx_to_step_datasets = collections.defaultdict(list)
             
             hpr_idx_to_step_datasets[hpr_idx].append(data)
             prev_cycle = cycle
 
-        for hpr_idx, agg_hpr in iter_agg(hpr_idx_to_step_datasets):
-            yield hpr_idx, prev_cycle, agg_hpr
+        for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
+            yield hpr_idx, prev_cycle, _aggregate(hpr_step_datasets)
 
 
 
@@ -480,7 +477,8 @@ def write_hprs(
             _max_iterations,
         ):
             ms1_frame_in_the_given_cycle = hprs.dia_run.cycle_to_ms1_frame(cycle)
-            saviours[hpr_idx].save_frame_tofs(
+            saviour = saviours[hpr_idx]
+            saviour.save_frame_tofs(
                 scans=data["scan"],
                 tofs=data["tof"],
                 intensities=data["intensity"],
@@ -515,7 +513,8 @@ def write_hprs(
 
     hprs.HPR_intervals.to_csv(path_or_buf=target/"HPR_intervals.csv")
     for savious in saviours.values():
-        savious.close()
+        # could pass in _Frames below as argument.
+        savious.close()# this updates target analysis.tdf
     del saviours
 
     return result_folders
