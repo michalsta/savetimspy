@@ -199,9 +199,12 @@ class SaveTIMS:
         assert len(scans) == len(intensities), "scans, tofs, and intensities must have the same length"
         num_peaks = len(scans)
 
+
         # Getting a map scan (list index) -> number of peaks
         peak_cnts = get_peak_cnts(total_scans, scans)
-        modify_tofs(tofs, scans)
+        if tofs.base is not None:# checking if we are dealing with a view
+            tofs = np.copy(tofs)
+        modify_tofs(tofs, scans)# this cannot run on a view
         if not isinstance(intensities, np.ndarray) or not intensities.dtype == np.uint32:
             intensities = np.array(intensities, np.uint32)
         interleaved = np_zip(tofs, intensities)
