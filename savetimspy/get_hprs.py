@@ -345,14 +345,14 @@ class HPRS:
                         col: data[min_idx: max_idx]
                         for col, data in X.items()
                     } if min_idx < max_idx else empty_data
-                    yield (
-                        hpr_idx,
-                        meta.cycle,
-                        meta.step,
-                        data,   
-                    )
                 except KeyError:# some hprs are simply not present in a given step.
-                    pass
+                    data = empty_data
+                yield (
+                    hpr_idx,
+                    meta.cycle,
+                    meta.step,
+                    data,
+                )
 
     def iter_cycle_aggregate_hprs(
         self,
@@ -376,13 +376,16 @@ class HPRS:
             )
         )
         hpr_idx_to_step_datasets = collections.defaultdict(list)
-        desired_hprs = set(self.HPR_intervals.index)
+        max_step = self.dia_run.max_step
+        hpr_to_step = {hpr_idx: -1 for hpr_idx in self.HPR_intervals.index}
         for hpr_idx, cycle, step, data in self.iter_hpr_events(hpr_indices, progressbar):
             hpr_idx_to_step_datasets[hpr_idx].append(data)
-            if set(hpr_idx_to_step_datasets) == desired_hprs:
+            hpr_to_step[hpr_idx] = step
+            if all( s==max_step for s in hpr_to_step.values()):
                 for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
                     yield hpr_idx, cycle, _aggregate(hpr_step_datasets)
                 hpr_idx_to_step_datasets = collections.defaultdict(list)
+                steps_counter = {hpr_idx: -1 for hpr_idx in self.HPR_intervals.index}
 
 
 def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
