@@ -193,18 +193,25 @@ class SaveTIMS:
             src_frame = self.current_frame
 
         frame_start_pos = int(self.tdf_bin.tell())
+
+        # if tofs.base is not None:# checking if we are dealing with a view
+        tofs = np.copy(tofs)
+        scans = np.copy(scans)
+        intensities = np.copy(intensities)
+
+
         if run_deduplication:
             scans, tofs, intensities = deduplicate(scans, tofs, intensities)
         assert len(scans) == len(tofs), "scans, tofs, and intensities must have the same length"
         assert len(scans) == len(intensities), "scans, tofs, and intensities must have the same length"
         num_peaks = len(scans)
-
+        if num_peaks == 0:
+            print("ZERO PEAKS")
 
         # Getting a map scan (list index) -> number of peaks
         peak_cnts = get_peak_cnts(total_scans, scans)
-        if tofs.base is not None:# checking if we are dealing with a view
-            tofs = np.copy(tofs)
         modify_tofs(tofs, scans)# this cannot run on a view
+
         if not isinstance(intensities, np.ndarray) or not intensities.dtype == np.uint32:
             intensities = np.array(intensities, np.uint32)
         interleaved = np_zip(tofs, intensities)

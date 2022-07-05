@@ -375,9 +375,18 @@ class HPRS:
                 dedup_v2(*combine_hpr_step_datasets(hpr_step_datasets))
             )
         )
+        if hpr_indices is None:
+            hpr_indices = list(self.HPR_intervals.index)
+        elif isinstance(hpr_indices, int):
+            hpr_indices = [hpr_indices]
+        elif isinstance(hpr_indices, list):
+            pass
+        else:
+            hpr_indices = list(hpr_indices)
+        hpr_indices = set(hpr_indices)# making sure it is unique
         hpr_idx_to_step_datasets = collections.defaultdict(list)
         max_step = self.dia_run.max_step
-        hpr_to_step = {hpr_idx: -1 for hpr_idx in self.HPR_intervals.index}
+        hpr_to_step = {hpr_idx: -1 for hpr_idx in hpr_indices}
         for hpr_idx, cycle, step, data in self.iter_hpr_events(hpr_indices, progressbar):
             hpr_idx_to_step_datasets[hpr_idx].append(data)
             hpr_to_step[hpr_idx] = step
@@ -385,7 +394,7 @@ class HPRS:
                 for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
                     yield hpr_idx, cycle, _aggregate(hpr_step_datasets)
                 hpr_idx_to_step_datasets = collections.defaultdict(list)
-                steps_counter = {hpr_idx: -1 for hpr_idx in self.HPR_intervals.index}
+                steps_counter = {hpr_idx: -1 for hpr_idx in hpr_indices}
 
 
 def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
