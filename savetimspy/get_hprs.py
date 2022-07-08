@@ -297,8 +297,25 @@ class HPRS:
         if show:
             plt.show()
 
+    def _parse_input_hpr_indices(
+        self,
+        hpr_indices: list[int]|int|typing.Iterable[int]|None = None,
+    ) -> set[int]:
+        if hpr_indices is None:
+            hpr_indices = list(self.HPR_intervals.index)
+        elif isinstance(hpr_indices, int):
+            hpr_indices = [hpr_indices]
+        elif isinstance(hpr_indices, list):
+            pass
+        else:
+            hpr_indices = list(hpr_indices)
+        hpr_indices = set(hpr_indices)# making sure it is unique
+        # assert all are present:
+        for hpr_idx in hpr_indices:
+            assert hpr_idx in self.HPR_intervals.index, f"hpr_idx = {hpr_idx} is not among HPR_intervals"
+        return hpr_indices
 
-    def iter_hpr_events(
+    def iter_hprs(
         self,
         hpr_indices: list[int]|int|typing.Iterable[int]|None = None,
         progressbar: bool=False,
@@ -312,48 +329,31 @@ class HPRS:
         Yields:
             tuple: the index of the current hpr, the cycle, the step, and the data consisting of a dictionary of numpy arrays with scans, tofs, and intensities.
         """
-        if hpr_indices is None:
-            hpr_indices = list(self.HPR_intervals.index)
-        elif isinstance(hpr_indices, int):
-            hpr_indices = [hpr_indices]
-        elif isinstance(hpr_indices, list):
-            pass
-        else:
-            hpr_indices = list(hpr_indices)
-        hpr_indices = set(hpr_indices)# making sure it is unique
+        hpr_indices = self._parse_input_hpr_indices(hpr_indices)
         columns = ("scan","tof","intensity")
         metas = self.dia_run.DiaFrameMsMsInfo.itertuples(index=False, name="Meta")
         if progressbar:
             metas = tqdm(metas, total=len(self.dia_run.DiaFrameMsMsInfo))
         empty_data = {
-            "scan": np.array([], dtype=np.uint32),
-            "tof": np.array([], dtype=np.uint32),
+            "scan":      np.array([], dtype=np.uint32),
+            "tof":       np.array([], dtype=np.uint32),
             "intensity": np.array([], dtype=np.uint32)
         }
-        for meta in metas:
-            # instead of pulling X multiple times for each HPR, do it once:
-            X = self.dia_run.opentims.query(meta.Frame, columns=columns)
+        for meta in metas:# instead of pulling X multiple times for each HPR, do it once:
+            frame_data = self.dia_run.opentims.query(meta.Frame, columns=columns)
+            cycle = meta.cycle
+            step = meta.step
             for hpr_idx in hpr_indices:
                 try:
-                    min_scan, max_scan = self.hpr_step_to_scan_min_max[ 
-                        (hpr_idx, meta.step)
-                    ] 
-                    min_idx, max_idx = binary_search(X["scan"], min_scan, max_scan+1)
-                    # if min_idx < max_idx:
-                    # reporting only cycle and step is necessary for compatibility with
-                    # 'iter_hpr_events_including_empty'
+                    min_scan, max_scan = self.hpr_step_to_scan_min_max[ (hpr_idx, meta.step) ]
+                    min_idx, max_idx = binary_search(frame_data["scan"], min_scan, max_scan+1)
                     data = {
                         col: data[min_idx: max_idx]
-                        for col, data in X.items()
+                        for col, data in frame_data.items()
                     } if min_idx < max_idx else empty_data
                 except KeyError:# some hprs are simply not present in a given step.
                     data = empty_data
-                yield (
-                    hpr_idx,
-                    meta.cycle,
-                    meta.step,
-                    data,
-                )
+                yield (hpr_idx, cycle, step, data)
 
     def iter_cycle_aggregate_hprs(
         self,
@@ -376,24 +376,17 @@ class HPRS:
                 dedup_v2(*combine_hpr_step_datasets(hpr_step_datasets))
             )
         )
-        if hpr_indices is None:
-            hpr_indices = list(self.HPR_intervals.index)
-        elif isinstance(hpr_indices, int):
-            hpr_indices = [hpr_indices]
-        elif isinstance(hpr_indices, list):
-            pass
-        else:
-            hpr_indices = list(hpr_indices)
-        hpr_indices = set(hpr_indices)# making sure it is unique
+        hpr_indices = self._parse_input_hpr_indices(hpr_indices)
         hpr_idx_to_step_datasets = collections.defaultdict(list)
         max_step = self.dia_run.max_step
         hpr_to_step = {hpr_idx: -1 for hpr_idx in hpr_indices}
-        for hpr_idx, cycle, step, data in self.iter_hpr_events(hpr_indices, progressbar):
+        for hpr_idx, cycle, step, data in self.iter_hprs(hpr_indices, progressbar):
             hpr_idx_to_step_datasets[hpr_idx].append(data)
             hpr_to_step[hpr_idx] = step
             if all( s==max_step for s in hpr_to_step.values()):
                 for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
-                    yield hpr_idx, cycle, _aggregate(hpr_step_datasets)
+                    agg_data = _aggregate(hpr_step_datasets)
+                    yield (hpr_idx, cycle, agg_data)
                 hpr_idx_to_step_datasets = collections.defaultdict(list)
                 steps_counter = {hpr_idx: -1 for hpr_idx in hpr_indices}
 
@@ -403,11 +396,19 @@ def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
 
 
 # TODO: add option to immediately translate hpr results into hdf.
+# from enum import Enum
+# class HPR_version(Enum):
+#     SIMPLE = 1
+#     CYCLE_STEP_AGGREGATE = 2
+#     HPR_TRANSFORM = 3
+
+
 def write_hprs(
     HPR_intervals: pd.DataFrame,
     source: pathlib.Path,
     target: pathlib.Path|None = None,
-    combine_steps_per_cycle: bool=True,
+    version: str="HPR_tranform",
+    # combine_steps_per_cycle: bool=True,
     min_coverage_fraction: float=0.5,# no unit
     window_width: float=36.0,# Da
     min_scan: int=1,
@@ -427,16 +428,18 @@ def write_hprs(
         combine_steps_per_cycle (bool): Should the steps be combined within a cycles for each individual HPR? It seems to work better with 4DFF.
 
     """
-    padding_for_floats = max(
-        get_max_chars_needed(HPR_intervals.hpr_start),
-        get_max_chars_needed(HPR_intervals.hpr_stop),
-    ) + 1
-    padding_for_ints = get_max_chars_needed(HPR_intervals.index) + 1
+    # padding_for_floats = max(
+    #     get_max_chars_needed(HPR_intervals.hpr_start),
+    #     get_max_chars_needed(HPR_intervals.hpr_stop),
+    # ) + 1
+    # padding_for_ints = get_max_chars_needed(HPR_intervals.index) + 1
+    padding_for_floats = 6
+    padding_for_ints = 4
     num2str = lambda number, padding: str(number).zfill(padding).replace(".","_")
     if target is None:
         target = source/"AggregateHPRs" if combine_steps_per_cycle else source/"HPRs"
     result_folders = [
-        target/f"HPR_{num2str(hpr.Index, padding_for_ints)}__{num2str(hpr.hpr_start, padding_for_floats)}__{num2str(hpr.hpr_stop, padding_for_floats)}.d"
+        target/f"{'AggHPR' if combine_steps_per_cycle else 'HPR'}_{num2str(hpr.Index, padding_for_ints)}__{num2str(hpr.hpr_start, padding_for_floats)}__{num2str(hpr.hpr_stop, padding_for_floats)}.d"
         for hpr in HPR_intervals.itertuples()
     ]
     try:
@@ -479,6 +482,8 @@ def write_hprs(
 
     frame_to_NumScans = dict(zip(dia_run.Frames.Id, dia_run.Frames.NumScans))
     #TODO: in absence of only some hprs, might only create those missing...
+
+    # Do dependency inversion here.
     if combine_steps_per_cycle:
         for hpr_idx, cycle, data in itertools.islice(
             hprs.iter_cycle_aggregate_hprs(progressbar=verbose),
@@ -505,7 +510,7 @@ def write_hprs(
             hprs.dia_run.opentims.frames["NumScans"]
         ))
         for hpr_idx, cycle, step, data in itertools.islice(
-            hprs.iter_hpr_events(progressbar=verbose),
+            hprs.iter_hprs(progressbar=verbose),
             _max_iterations,
         ):
             saviour = saviours[hpr_idx]
