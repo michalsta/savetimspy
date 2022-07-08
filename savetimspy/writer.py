@@ -205,8 +205,6 @@ class SaveTIMS:
         assert len(scans) == len(tofs), "scans, tofs, and intensities must have the same length"
         assert len(scans) == len(intensities), "scans, tofs, and intensities must have the same length"
         num_peaks = len(scans)
-        if num_peaks == 0:
-            print("ZERO PEAKS")
 
         # Getting a map scan (list index) -> number of peaks
         peak_cnts = get_peak_cnts(total_scans, scans)

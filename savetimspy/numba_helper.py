@@ -4,9 +4,10 @@ import numpy as np
 import numpy.typing as npt
 from collections import Counter
 
-
+# do not use this: dedup_v2 is 10 times faster.
 #@jit(nopython=True) #TODO: make this work
 def deduplicate(scans, tofs, intensities):
+    # It is not easy to specify the type of the Counter.
     C = Counter()
     for i in range(len(scans)):
         C[(scans[i], tofs[i])] += intensities[i]
@@ -149,24 +150,26 @@ def linear_search(scans, min_scan, max_scan):
 
 @numba.jit(nopython=True)
 def dedup_sorted(xx, yy, weights, order):
+    if len(xx) <= 1:# nothing to do and code below needs len(xx) > 1
+        return (xx, yy, weights)
+    x_prev = xx[order[0]]
+    y_prev = yy[order[0]]
     xx_res = []
     yy_res = []
     ww_res = []
-    x_prev = -cmath.inf
-    y_prev = -cmath.inf
-    w_agg = 0
-    for i in range(len(xx)):    
-        w_agg += weights[order[i]]
+    w_agg = weights[order[0]]
+    for i in range(1, len(xx)):    
         x = xx[order[i]]
         y = yy[order[i]]
         if x > x_prev or y > y_prev:
-            xx_res.append(x)
-            yy_res.append(y)
+            xx_res.append(x_prev)
+            yy_res.append(y_prev)
             ww_res.append(w_agg)
             w_agg = 0
-        x_prev = x
-        y_prev = y
-    if w_agg != 0:
+            x_prev = x
+            y_prev = y
+        w_agg += weights[order[i]]
+    if x == x_prev and y == y_prev:
         xx_res.append(x)
         yy_res.append(y)
         ww_res.append(w_agg)
@@ -176,6 +179,8 @@ def dedup_sorted(xx, yy, weights, order):
         np.array(ww_res, dtype=weights.dtype)
     )
 
+# 10 times faster than deduplicate above.
 def dedup_v2(xx, yy, weights):
     order = np.lexsort([yy, xx])
     return dedup_sorted(xx, yy, weights, order)
+

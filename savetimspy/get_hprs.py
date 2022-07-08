@@ -525,7 +525,7 @@ def write_hprs(
         # could pass in _Frames below as argument.
         saviour.close()# this updates target analysis.tdf
     # del saviours
-    return result_folders, saviours
+    return result_folders
 
 
 
