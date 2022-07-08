@@ -91,7 +91,7 @@ def update_frames_table(
         frame_row_updates (Iterable of tuples of int and dict): A sequence of tuples with the numbers of the Frame Ids from the sqlite to reuse and a dictionary with updates.
         sqlite_connection (sqlite3.Connection): An open connection to analysis.tdf.
         _cols (tuple): Columns in the Frames table.
-        _Frames (pd.DataFrame): The contents of the original analysis.tdf:::Frames table. If not provided will be read in from the provided connection.
+        _Frames (pd.DataFrame): The contents of the original analysis.tdf:::Frames table. If not provided will be read in from the provided connection. A smaller copy of _Frames will be used.
     """
     orig_rows, updates = zip(*frame_row_updates)
     orig_rows = np.array(orig_rows)
@@ -195,9 +195,10 @@ class SaveTIMS:
         frame_start_pos = int(self.tdf_bin.tell())
 
         # if tofs.base is not None:# checking if we are dealing with a view
-        tofs = np.copy(tofs)
-        scans = np.copy(scans)
-        intensities = np.copy(intensities)
+        tofs = np.copy(tofs)# THIS MUST STAY!!!! modify_tofs change tofs that would otherwise be a numpy view!!! That could modify that view multiple times.
+
+        scans = np.copy(scans)# THIS LIKELY COULD GO
+        intensities = np.copy(intensities)# THIS LIKELY COULD GO
 
 
         if run_deduplication:

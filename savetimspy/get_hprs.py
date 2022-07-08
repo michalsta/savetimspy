@@ -8,6 +8,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import pathlib
+import sqlite3
 import typing
 
 
@@ -433,12 +434,13 @@ def write_hprs(
     padding_for_ints = get_max_chars_needed(HPR_intervals.index) + 1
     num2str = lambda number, padding: str(number).zfill(padding).replace(".","_")
     if target is None:
-        target = source/"HPRs"
+        target = source/"AggregateHPRs" if combine_steps_per_cycle else source/"HPRs"
     result_folders = [
         target/f"HPR_{num2str(hpr.Index, padding_for_ints)}__{num2str(hpr.hpr_start, padding_for_floats)}__{num2str(hpr.hpr_stop, padding_for_floats)}.d"
         for hpr in HPR_intervals.itertuples()
     ]
     try:
+        print(target)
         target.mkdir()
     except FileExistsError:
         for target_path in result_folders:
@@ -494,37 +496,38 @@ def write_hprs(
                 MsMsType=0,
             )
     else:
-        # TODO finish this.
-        raise NotImplementedError("You Foul! This was not implemented!")
-
-        MS2Frames = pd.DataFrame(hprs.dia_run.opentims.frames).query("MsMsType > 0")
         cycle_step_to_NumScans = dict(zip(
-            zip(*hprs.dia_run.ms2_frame_to_cycle_step(MS2Frames.Id)),
+            zip(
+                *hprs.dia_run.ms2_frame_to_cycle_step(
+                    hprs.dia_run.DiaFrameMsMsInfo.Frame.to_numpy()
+                )
+            ),
             hprs.dia_run.opentims.frames["NumScans"]
         ))
-        for cycle, step, hpr_idx, scans, tofs, intensities in itertools.islice(
-            hprs.full_iter(verbose=verbose),
+        for hpr_idx, cycle, step, data in itertools.islice(
+            hprs.iter_hpr_events(progressbar=verbose),
             _max_iterations,
         ):
             saviour = saviours[hpr_idx]
             saviour.save_frame_tofs(
-                scans=scans,
-                tofs=tofs,
-                intensities=intensities,
+                scans=data["scan"],
+                tofs=data["tof"],
+                intensities=data["intensity"],
                 total_scans=cycle_step_to_NumScans[(cycle, step)],
-                copy_sql=True,
-                src_frame=dia_run.cycle_to_ms1_frame(cycle),
+                src_frame=hprs.dia_run.cycle_step_to_ms2_frame(cycle, step),
                 run_deduplication=False,
                 MsMsType=0,
             )
-
     hprs.HPR_intervals.to_csv(path_or_buf=target/"HPR_intervals.csv")
     if verbose:
         print("Updating the analysis.tdf files: in particular, writing down retention times of the MS1 frames within a given cycle.")
+    # _Frames is the original frame info used for updates to the target analysis.tdf files
+    # Here we read the original _Frames once only in under a second and avoid 
+    # reading them 200 times which takes 42"
+    with sqlite3.connect(source/"analysis.tdf") as sqlite_connection:
+        _Frames = pd.read_sql('SELECT * FROM Frames', sqlite_connection, index_col="Id")
     for saviour in saviours.values():
-        # could pass in _Frames below as argument.
-        saviour.close()# this updates target analysis.tdf
-    # del saviours
+        saviour.close(_Frames=_Frames)
     return result_folders
 
 
