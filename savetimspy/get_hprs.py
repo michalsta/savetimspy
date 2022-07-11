@@ -83,8 +83,16 @@ def combine_hpr_step_datasets(
         i += n 
     return (all_scans, all_tofs, all_intensities)
 
-
-HPR_FRAME_META_AND_DATA_TYPE = tuple[int,int,int,dict[str, npt.NDArray]]
+MEASUREMENTS_TYPE = dict[
+    str,#column name
+    npt.NDArray[np.uint32]|npt.NDArray[np.float64],#measurements
+]
+HPR_CYCLE_STEP_DATA_TYPE = tuple[
+    int,#hpr_idx
+    int,#cycle
+    int,#step
+    MEASUREMENTS_TYPE,
+]
 
 
 class HPRS:
@@ -232,7 +240,13 @@ class HPRS:
             (hpr_idx, step): (np.min(scans), np.max(scans))
             for (hpr_idx, step), scans in self.hpr_quadrupole_matches.groupby(["hpr_idx", "step"]).scan
         }
-
+        # Below: the empty data with all possible column names:
+        # automatically check for proper column name
+        self.empty_data = {}
+        for col in ("frame","scan","tof","intensity"): 
+            self.empty_data[col] = np.array([], dtype=np.uint32)
+        for col in ("retention_time","inv_ion_mobility","mz"):
+            self.empty_data[col] = np.array([], dtype=np.float64)
 
     def hpr_idx_scan_to_step(self) -> dict[tuple[int], tuple[int]]:
         return {k: tuple(v) 
@@ -315,12 +329,46 @@ class HPRS:
             assert hpr_idx in self.HPR_intervals.index, f"hpr_idx = {hpr_idx} is not among HPR_intervals"
         return hpr_indices
 
-    def iter_hprs(
+
+    def _get_hpr_data(
+        self,
+        hpr_idx: int, 
+        step: int,
+        frame_data: dict[str,npt.NDArray],
+    ) -> MEASUREMENTS_TYPE:
+        try:
+            min_scan, max_scan = self.hpr_step_to_scan_min_max[ (hpr_idx, step) ]
+            if min_scan < max_scan:
+                min_idx, max_idx = binary_search(frame_data["scan"], min_scan, max_scan+1)
+                if min_idx < max_idx:
+                    return {
+                        col: measurements[min_idx: max_idx]
+                        for col, measurements in frame_data.items()
+                    }
+        except KeyError:# some hprs are simply not present in a given step.
+            pass
+        return {col: self.empty_data[col] for col in frame_data}
+
+
+    def get_hpr_cycle_step_data(
+        self,
+        hpr_idx: int,
+        cycle: int,
+        step: int,
+        columns: tuple[str]=("scan","tof","intensity"),
+    ) -> MEASUREMENTS_TYPE:
+        frame = self.dia_run.cycle_step_to_ms2_frame(cycle, step)
+        frame_data = self.dia_run.opentims.query(frame, columns=columns)
+        return self._get_hpr_data(hpr_idx, step, frame_data)
+
+
+    def iter_hprs_v2(
         self,
         hpr_indices: list[int]|int|typing.Iterable[int]|None = None,
         progressbar: bool=False,
-    ) -> typing.Iterator[HPR_FRAME_META_AND_DATA_TYPE]:
-        """ITerate over hpr datasets.
+        columns = ("scan","tof","intensity"),
+    ) -> typing.Iterator[HPR_CYCLE_STEP_DATA_TYPE]:
+        """Iterate over hpr datasets.
 
         Arguments:
             hpr_indices (list,int,Iterable[int]): The indices of the HPRs to report.
@@ -330,27 +378,45 @@ class HPRS:
             tuple: the index of the current hpr, the cycle, the step, and the data consisting of a dictionary of numpy arrays with scans, tofs, and intensities.
         """
         hpr_indices = self._parse_input_hpr_indices(hpr_indices)
-        columns = ("scan","tof","intensity")
-        metas = self.dia_run.DiaFrameMsMsInfo.itertuples(index=False, name="Meta")
+        MS2_frames_meta = self.dia_run.DiaFrameMsMsInfo[["cycle","step"]].itertuples(index=False)
         if progressbar:
-            metas = tqdm(metas, total=len(self.dia_run.DiaFrameMsMsInfo))
-        empty_data = {
-            "scan":      np.array([], dtype=np.uint32),
-            "tof":       np.array([], dtype=np.uint32),
-            "intensity": np.array([], dtype=np.uint32)
-        }
-        for meta in metas:# instead of pulling X multiple times for each HPR, do it once:
-            frame_data = self.dia_run.opentims.query(meta.Frame, columns=columns)
-            cycle = meta.cycle
-            step = meta.step
+            MS2_frames_meta = tqdm(MS2_frames_meta, total=len(self.dia_run.DiaFrameMsMsInfo))
+        for cycle, step in MS2_frames_meta:# one data query for all hprs in question
+            frame = self.dia_run.cycle_step_to_ms2_frame(cycle, step)
+            frame_data = self.dia_run.opentims.query(frame, columns=columns)
+            for hpr_idx in hpr_indices:
+                data = self._get_hpr_data(hpr_idx, step, frame_data)
+                yield (hpr_idx, cycle, step, data)
+
+
+    def iter_hprs(
+        self,
+        hpr_indices: list[int]|int|typing.Iterable[int]|None = None,
+        progressbar: bool=False,
+    ) -> typing.Iterator[HPR_CYCLE_STEP_DATA_TYPE]:
+        
+        hpr_indices = self._parse_input_hpr_indices(hpr_indices)
+        columns = ("scan","tof","intensity")
+        empty_data = {col: np.array([], dtype=np.uint32) for col in columns}
+        MS2_frames_meta = self.dia_run.DiaFrameMsMsInfo[["Frame","cycle","step"]].itertuples(index=False)
+        if progressbar:
+            MS2_frames_meta = tqdm(MS2_frames_meta, total=len(self.dia_run.DiaFrameMsMsInfo))
+        for frame, cycle, step in MS2_frames_meta:# one data query for all hprs in question
+            frame_data = self.dia_run.opentims.query(frame, columns=columns)
             for hpr_idx in hpr_indices:
                 try:
-                    min_scan, max_scan = self.hpr_step_to_scan_min_max[ (hpr_idx, meta.step) ]
-                    min_idx, max_idx = binary_search(frame_data["scan"], min_scan, max_scan+1)
-                    data = {
-                        col: data[min_idx: max_idx]
-                        for col, data in frame_data.items()
-                    } if min_idx < max_idx else empty_data
+                    min_scan, max_scan = self.hpr_step_to_scan_min_max[ (hpr_idx, step) ]
+                    if min_scan < max_scan:
+                        min_idx, max_idx = binary_search(frame_data["scan"], min_scan, max_scan+1)
+                        if min_idx < max_idx:
+                            data = {
+                                col: data[min_idx: max_idx] 
+                                for col, data in frame_data.items()
+                            }
+                        else:
+                            data = empty_data
+                    else:
+                        data = empty_data
                 except KeyError:# some hprs are simply not present in a given step.
                     data = empty_data
                 yield (hpr_idx, cycle, step, data)
@@ -359,7 +425,7 @@ class HPRS:
         self,
         hpr_indices: list[int]|int|typing.Iterable[int]|None = None,
         progressbar: bool=False,
-    ) -> typing.Iterator[HPR_FRAME_META_AND_DATA_TYPE]:
+    ) -> typing.Iterator[tuple[int,int,MEASUREMENTS_TYPE]]:
         """Iterate over hypothetical precursor ranges aggregated over steps in one cycle.
 
         Arguments:
@@ -378,17 +444,16 @@ class HPRS:
         )
         hpr_indices = self._parse_input_hpr_indices(hpr_indices)
         hpr_idx_to_step_datasets = collections.defaultdict(list)
-        max_step = self.dia_run.max_step
-        hpr_to_step = {hpr_idx: -1 for hpr_idx in hpr_indices}
-        for hpr_idx, cycle, step, data in self.iter_hprs(hpr_indices, progressbar):
+        #                                          this is the number of steps
+        hprs_times_steps_count = len(hpr_indices)*(self.dia_run.max_step+1)
+        for i, (hpr_idx, cycle, step, data) in enumerate(self.iter_hprs(hpr_indices, progressbar)):
             hpr_idx_to_step_datasets[hpr_idx].append(data)
-            hpr_to_step[hpr_idx] = step
-            if all( s==max_step for s in hpr_to_step.values()):
+            if (i + 1) % hprs_times_steps_count == 0:# +1 because we really want to count from one
                 for hpr_idx, hpr_step_datasets in hpr_idx_to_step_datasets.items():
                     agg_data = _aggregate(hpr_step_datasets)
-                    yield (hpr_idx, cycle, agg_data)
+                    yield hpr_idx, cycle, agg_data
                 hpr_idx_to_step_datasets = collections.defaultdict(list)
-                steps_counter = {hpr_idx: -1 for hpr_idx in hpr_indices}
+
 
 
 def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
