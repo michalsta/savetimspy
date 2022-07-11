@@ -184,3 +184,19 @@ def dedup_v2(xx, yy, weights):
     order = np.lexsort([yy, xx])
     return dedup_sorted(xx, yy, weights, order)
 
+
+@numba.njit
+def get_group_tags_starts_ends(groups):
+    if len(groups) == 1:
+        return [(groups[0],0,1)]
+    res = []
+    i_prev = 0
+    tag_prev = groups[i_prev]
+    for i, tag in enumerate(groups):
+        if tag != tag_prev:
+            res.append((tag_prev, i_prev, i))
+            i_prev = i
+            tag_prev = tag
+    if i_prev < i:
+        res.append((tag, i_prev, len(groups)))
+    return res
