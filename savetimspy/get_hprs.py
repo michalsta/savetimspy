@@ -277,8 +277,8 @@ class HPRS:
             min_steps_quads.add(quad_idx_of_min_step)
         res = self.StepScanToUsedQuadrupolePosition.isin(hpr_idxs_touching_the_quadrupole_position).astype(int).to_numpy()
         res[res==1] = 2
-        res[self.StepScanToUsedQuadrupolePosition.isin(min_steps_quads).to_numpy()] = 1
-        res[self.StepScanToUsedQuadrupolePosition.isin(max_steps_quads).to_numpy()] = 3
+        res[self.StepScanToUsedQuadrupolePosition.isin(min_steps_quads).to_numpy()] = 3
+        res[self.StepScanToUsedQuadrupolePosition.isin(max_steps_quads).to_numpy()] = 1
         return res
 
 
@@ -442,6 +442,7 @@ class HPRS:
             (hpr_idx, diagonal, col): [ np.empty(shape=(0,), dtype=np.uint32) ]*steps_cnt 
             for hpr_idx in hpr_indices for diagonal in self.diagonals for col in columns
         }# the empty arrays are important: some of them remain there and concatenate needs that
+        # also: we assured above that we have all of the diagonals present and in the right order.
         hpr_idx_diagonal_column_to_measurement = storage_templ.copy()# massive speed-up over repeated construction...
         prev_cycle = -cmath.inf
         for i, (hpr_idx, cycle, step, data) in enumerate(self.iter_hprs(hpr_indices, progressbar)):
@@ -466,6 +467,8 @@ class HPRS:
                 hpr_idx_diagonal_column_to_measurement = storage_templ.copy()                
 
 
+
+
 def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
     return max( len(str(x)) for x in xx )
 
@@ -482,8 +485,7 @@ def write_hprs(
     HPR_intervals: pd.DataFrame,
     source: pathlib.Path,
     target: pathlib.Path|None = None,
-    version: str="HPR_tranform",
-    # combine_steps_per_cycle: bool=True,
+    hpr_type: str="transform",
     min_coverage_fraction: float=0.5,# no unit
     window_width: float=36.0,# Da
     min_scan: int=1,
@@ -511,10 +513,25 @@ def write_hprs(
     padding_for_floats = 6
     padding_for_ints = 4
     num2str = lambda number, padding: str(number).zfill(padding).replace(".","_")
+
+    hpr_type_to_names = {
+        "simple":    ("HPRs",           "HPR"           ),
+        "transform": ("TransformHPRs",  "TransformHPR"  ),
+        "aggregate": ("AggregateHPRs",  "AggHPR"        )
+    }
+    try:
+        (
+            target_folder_name,
+            subfolder_name,
+        ) = hpr_type_to_names[hpr_type]
+    except KeyError:
+        raise KeyError(f"Unsupported type of HPRs: {hpr_type}. Supported: {', '.join(hpr_type_to_names)}.")
+
     if target is None:
-        target = source/"AggregateHPRs" if combine_steps_per_cycle else source/"HPRs"
+        target = source/target_folder_name
+
     result_folders = [
-        target/f"{'AggHPR' if combine_steps_per_cycle else 'HPR'}_{num2str(hpr.Index, padding_for_ints)}__{num2str(hpr.hpr_start, padding_for_floats)}__{num2str(hpr.hpr_stop, padding_for_floats)}.d"
+        target/f"{subfolder_name}_{num2str(hpr.Index, padding_for_ints)}__{num2str(hpr.hpr_start, padding_for_floats)}__{num2str(hpr.hpr_stop, padding_for_floats)}.d"
         for hpr in HPR_intervals.itertuples()
     ]
     try:
@@ -546,7 +563,7 @@ def write_hprs(
         set_soft_limit(_soft_limit)
 
     if verbose:
-        print("Copying HPR analysis.tdf.")
+        print(f"Copying analysis.tdf into {len(result_folders)} folders.")
     saviours = {
         hpr_index: SaveTIMS(
             opentims_obj=hprs.dia_run.opentims,
@@ -558,8 +575,10 @@ def write_hprs(
     frame_to_NumScans = dict(zip(dia_run.Frames.Id, dia_run.Frames.NumScans))
     #TODO: in absence of only some hprs, might only create those missing...
 
-    # Do dependency inversion here.
-    if combine_steps_per_cycle:
+    
+
+
+    if hpr_type == "simple":
         for hpr_idx, cycle, data in itertools.islice(
             hprs.iter_cycle_aggregate_hprs(progressbar=verbose),
             _max_iterations,
@@ -575,14 +594,14 @@ def write_hprs(
                 run_deduplication=False,
                 MsMsType=0,
             )
-    else:
+    elif hpr_type == "aggregate":
         cycle_step_to_NumScans = dict(zip(
             zip(
                 *hprs.dia_run.ms2_frame_to_cycle_step(
                     hprs.dia_run.DiaFrameMsMsInfo.Frame.to_numpy()
                 )
             ),
-            hprs.dia_run.opentims.frames["NumScans"]
+            
         ))
         for hpr_idx, cycle, step, data in itertools.islice(
             hprs.iter_hprs(progressbar=verbose),
@@ -598,6 +617,55 @@ def write_hprs(
                 run_deduplication=False,
                 MsMsType=0,
             )
+    elif hpr_type == "transform":        
+        all_frames = hprs.dia_run.opentims.frames["Id"]
+        all_retention_times = hprs.dia_run.opentims.frames["Time"]
+        frame_to_NumScans = dict(zip(all_frames, hprs.dia_run.opentims.frames["NumScans"]))
+        MS1_frames = all_frames[hprs.dia_run.opentims.frames["MsMsType"]==0]
+        # The idea here is to linearly interpolate within supplied values.
+        diagonal_cycle_to_retention_time_frame_NumScans = {}
+        for diagonal in hprs.diagonals:
+            mock_frames = MS1_frames + 21 * (diagonal-1)/len(hprs.diagonals)
+            retention_times = np.interp(
+                x=mock_frames,
+                xp=all_frames,
+                fp=all_retention_times,
+                left =-1,# blind guardian
+                right=-1,# blind guardian
+            )
+            frames = mock_frames.astype(int)
+            frames = frames[retention_times > -1]
+            retention_times = retention_times[retention_times > -1]
+            cycles = hprs.dia_run.frame_to_cycle(frames)
+            for cycle, rt, frame in zip(cycles, retention_times, frames):
+                diagonal_cycle_to_retention_time_frame_NumScans[(diagonal,cycle)] = (
+                    rt,
+                    frame,
+                    frame_to_NumScans[frame]
+                )
+        
+        for hpr_idx, cycle, diagonal, data in itertools.islice(
+            hprs.iter_hpr_transform(progressbar=verbose),
+            _max_iterations,
+        ):
+            saviour = saviours[hpr_idx]
+            (   retention_time,
+                frame,
+                num_scans,
+            ) = diagonal_cycle_to_retention_time_frame_NumScans[(diagonal, cycle)]
+            saviour.save_frame_tofs(
+                scans=data["scan"],
+                tofs=data["tof"],
+                intensities=data["intensity"],
+                total_scans=num_scans,
+                src_frame=frame,
+                run_deduplication=False,
+                MsMsType=0,
+                Time=retention_time,
+            )
+    else:
+        raise NotImplementedError(f"Algorithm for hpr_type={hpr_type} not supported.")
+
     hprs.HPR_intervals.to_csv(path_or_buf=target/"HPR_intervals.csv")
     if verbose:
         print("Updating the analysis.tdf files: in particular, writing down retention times of the MS1 frames within a given cycle.")
