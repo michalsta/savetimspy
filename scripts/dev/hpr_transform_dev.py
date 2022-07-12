@@ -74,25 +74,61 @@ for hpr_idx, path in zip(HPR_intervals.index, paths):
     clusters = read_4DFF_to_df_physical_dims_only(clusters_path)
     hpr_to_boxes[hpr_idx] = get_extents_vol_centers(clusters)
 
+for boxes in hpr_to_boxes.values():
+    if len(boxes):
+        print(boxes.dtypes)
+
+sizes = {hpr_idx: len(boxes) for hpr_idx, boxes in hpr_to_boxes.items()}
+plt.plot(hprs.HPR_intervals.eval("(hpr_stop + hpr_start)/2"), list(sizes.values()))
+plt.title("HPR Transform of Unfragmented HeLa: all 199 HPRs.")
+plt.ylabel("Boxes Count")
+plt.xlabel("HPR Center")
+plt.show()
+
+peak_counts = {hpr_idx: boxes.peak_count.sum() for hpr_idx, boxes in hpr_to_boxes.items()}
+plt.plot(hprs.HPR_intervals.eval("(hpr_stop + hpr_start)/2"), list(peak_counts.values()))
+plt.title("HPR Transform of Unfragmented HeLa: all 199 HPRs.")
+plt.ylabel("Peak Count")
+plt.xlabel("HPR Center")
+plt.show()
+
+cluster_intensity = {hpr_idx: boxes.intensity.sum() for hpr_idx, boxes in hpr_to_boxes.items()}
+plt.plot(hprs.HPR_intervals.eval("(hpr_stop + hpr_start)/2"), list(cluster_intensity.values()))
+plt.title("HPR Transform of Unfragmented HeLa: all 199 HPRs.")
+plt.ylabel("Total Intensity")
+plt.xlabel("HPR Center")
+plt.show()
+
+for hpr_idx, boxes in hpr_to_boxes.items():
+    if len(boxes):
+        boxes["hpr_idx"] = hpr_idx
+all_clusters = pd.concat(box for box in hpr_to_boxes.values() if len(box))
 
 cols = ["retention_time", "inv_ion_mobility", "mz"]
 extents = [f"{c}_extent" for c in cols]
 
-filtered_clusters = clusters.query("retention_time_extent < 50 and mz_extent < .06")
+filtered_clusters = all_clusters.query("retention_time_extent < 50 and mz_extent < .06")
 with plt.style.context('dark_background'):
     scatterplot_matrix(
         filtered_clusters[extents],
         weights=filtered_clusters.intensity, show=False)
-    plt.suptitle("Intensity Weighted HPR 100 Boxes Extents: 900-912 m/z")
+    plt.suptitle("Intensity Weighted Boxes' Extents: All HPRs")
     plt.show()
-
 
 with plt.style.context('dark_background'):
     scatterplot_matrix(
-        np.log10(clusters[extents]+.0001),
-        weights=clusters.intensity, show=False)
-    plt.suptitle("Intensity Weighted HPR 100 Boxes Extents: 900-912 m/z")
+        filtered_clusters[extents],
+        weights=filtered_clusters.peak_count, show=False)
+    plt.suptitle("Peak Count Weighted Boxes' Extents: All HPRs")
     plt.show()
+
+
+# with plt.style.context('dark_background'):
+#     scatterplot_matrix(
+#         np.log10(all_clusters[extents]+.0001),
+#         weights=clusters.intensity, show=False)
+#     plt.suptitle("Intensity Weighted HPR 100 Boxes Extents: 900-912 m/z")
+#     plt.show()
 
 
 

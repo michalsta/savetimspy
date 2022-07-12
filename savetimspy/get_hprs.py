@@ -676,6 +676,7 @@ def write_hprs(
         _Frames = pd.read_sql('SELECT * FROM Frames', sqlite_connection, index_col="Id")
     for saviour in saviours.values():
         saviour.close(_Frames=_Frames)
+
     return result_folders
 
 
