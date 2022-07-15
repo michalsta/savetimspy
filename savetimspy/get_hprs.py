@@ -316,9 +316,8 @@ class HPRS:
         return len(self.diagonals)
 
     # TODO: speed this up
-    # TODO: rename this to scan_step_to_diagonal
     @functools.cache
-    def get_subframe_matrix(self, hpr_idx) -> npt.NDArray[int]:
+    def scan_step_to_diagonal(self, hpr_idx) -> npt.NDArray[int]:
         hpr_quad_matches = self.hpr_quadrupole_matches.query(
             "hpr_idx == @hpr_idx"
         ).copy()
@@ -365,17 +364,20 @@ class HPRS:
         res[res == 1] = 2
         res[self.StepScanToUsedQuadrupolePosition.isin(min_steps_quads).to_numpy()] = 3
         res[self.StepScanToUsedQuadrupolePosition.isin(max_steps_quads).to_numpy()] = 1
-        return res
+        # adding a scan=0 to the indexing to avoid substraction of 1 from scan value
+        out = np.zeros(shape=(res.shape[0] + 1, res.shape[1]), dtype=res.dtype)
+        out[1:, :] = res
+        return out
 
     @functools.cache
     def diagonal_scan_to_step(self, hpr_idx):
-        subframe_matrix = self.get_subframe_matrix(hpr_idx)
+        scan_step_to_diagonal = self.scan_step_to_diagonal(hpr_idx)
         diagonal_scan_to_step = np.zeros(
             shape=(self.diagonal_cnt + 1, self.scan_cnt + 1), dtype=np.uint32
         )
         for scan in range(self.min_scan, self.max_scan + 1):
             for step in range(self.min_step, self.max_step + 1):
-                diagonal = subframe_matrix[scan - 1, step]
+                diagonal = scan_step_to_diagonal[scan, step]
                 if diagonal != 0:
                     diagonal_scan_to_step[diagonal, scan] = step
         return diagonal_scan_to_step
@@ -397,8 +399,11 @@ class HPRS:
             hpr_idx in self.HPR_intervals.index
         ), f"The range number you provided, hpr_idx={hpr_idx}, is outside the available range, i.e. between {self.HPR_intervals.index.min()} and {self.HPR_intervals.index.max()}."
         start, stop = self.HPR_intervals.loc[hpr_idx]
-        subframe_df = self.get_subframe_matrix(hpr_idx)
-        plt.matshow(subframe_df, aspect="auto", origin="lower", **kwargs)
+        scan_step_to_diagonal = self.scan_step_to_diagonal(hpr_idx)
+        scan_step_to_diagonal = scan_step_to_diagonal[
+            self.min_scan : (self.max_scan + 1), self.min_step : (self.max_step + 1)
+        ]
+        plt.matshow(scan_step_to_diagonal, aspect="auto", origin="lower", **kwargs)
         plt.yticks(ticks=self.scans - 1, labels=self.scans)
         plt.suptitle(
             f"HPR [{start}, {stop}], Minimal Coverage = {100*self.min_coverage_fraction}%",
@@ -556,9 +561,10 @@ class HPRS:
         for i, (hpr_idx, cycle, step, data) in enumerate(
             self.iter_hprs(hpr_indices, progressbar)
         ):
-            scan_step_to_group = self.get_subframe_matrix(hpr_idx)
-            groups = scan_step_to_group[data["scan"] - 1, step]
-            for diagonal, group_start, group_end in get_group_tags_starts_ends(groups):
+            diagonals = self.scan_step_to_diagonal(hpr_idx)[data["scan"], step]
+            for diagonal, group_start, group_end in get_group_tags_starts_ends(
+                diagonals
+            ):
                 assert (
                     diagonal in self.diagonals
                 ), f"Found a point that does not belong to HPR={hpr_idx}"
