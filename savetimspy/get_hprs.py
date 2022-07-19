@@ -11,7 +11,7 @@ import pandas as pd
 import pathlib
 import sqlite3
 import typing
-
+import scipy.interpolate
 
 from savetimspy.common_assertions import (
     assert_minimal_input_for_clusterings_exist,
@@ -588,17 +588,94 @@ class HPRS:
                         yield hpr_idx, cycle, diagonal, data
                 hpr_idx_diagonal_column_to_measurement = storage_templ.copy()
 
+    def iter_interpolated_retention_time_frame_numscan_tuples(
+        self,
+    ) -> dict[tuple[int, int], tuple[float, int, int]]:
+        all_frames = self.dia_run.opentims.frames["Id"]
+        all_retention_times = self.dia_run.opentims.frames["Time"]
+        frame_to_NumScans = dict(
+            zip(all_frames, self.dia_run.opentims.frames["NumScans"])
+        )
+        MS1_frames = all_frames[self.dia_run.opentims.frames["MsMsType"] == 0]
+        for diagonal in self.diagonals:
+            mock_frames = MS1_frames + self.dia_run.full_dia_cycle_len * (
+                diagonal - 1
+            ) / len(self.diagonals)
+            retention_times = np.interp(  # linear interpolation
+                x=mock_frames,  # places to get the values at
+                xp=all_frames,  # x-values of knots
+                fp=all_retention_times,  # y-values of knots
+                left=-1,  # blind guardian
+                right=-1,  # blind guardian
+            )
+            frames = mock_frames.astype(int)  # use np.rint instead??
+            frames = frames[retention_times > -1]
+            mock_frames = mock_frames[retention_times > -1]
+            retention_times = retention_times[retention_times > -1]
+            cycles = self.dia_run.frame_to_cycle(frames)
+            for cycle, rt, frame, mock_frame in zip(
+                cycles, retention_times, frames, mock_frames
+            ):
+                numscan = frame_to_NumScans[frame]
+                yield diagonal, cycle, rt, frame, mock_frame, numscan
+
+    @functools.cache  # avoid redoing the assertions but for the first time
+    def get_iim2scan(self) -> typing.Callable[[npt.NDArray], npt.NDArray]:
+        """Get a function for translating inverse ion mobilities to scans.
+
+        Idea: use linear interpolation. Errors are small and we simply round the result.
+        """
+        op = self.dia_run.opentims
+        scans = np.r_[op.min_scan : (op.max_scan + 1)]
+        iims = op.scan_to_inv_ion_mobility(scans, 1)
+        _iim2scan = scipy.interpolate.interp1d(iims, scans, kind="linear")
+        iim2scan = lambda iims: np.rint(_iim2scan(iims)).astype(np.uint32)
+        # assessing quality of fit
+        assert np.all(iim2scan(iims) == scans), "The fitting of iim2scan does not work."
+        return iim2scan
+
+    @functools.cache  # avoid redoing the assertions but for the first time
+    def get_mock_step_to_diagonal(self):
+        """
+        Mock steps are floats in [0, self.dia_run.full_dia_cycle_len).
+        We make them more or less equidistant and they serve mainly as a way to extrapolate the retention times.
+
+        Each such number corresponds to one particular diagonal.
+        Here, we derive a transformation from
+        """
+        X = pd.DataFrame(
+            self.iter_interpolated_retention_time_frame_numscan_tuples(),
+            columns=(
+                "diagonal",
+                "cycle",
+                "retention_time",
+                "frame",
+                "mock_frame",
+                "numscan",
+            ),
+        )
+        X["ms1_frame"] = self.dia_run.cycle_to_ms1_frame(X.cycle)
+        X["mock_step"] = X.mock_frame - X.ms1_frame
+        slope, intercept = np.polyfit(X.mock_step, X.diagonal, deg=1)
+        mock_step_to_diagonal = lambda mock_step: np.rint(
+            intercept + mock_step * slope
+        ).astype(np.uint32)
+        # assessing quality of fit
+        assert np.all(
+            mock_step_to_diagonal(X.mock_step) == X.diagonal
+        ), "The fitting of mock_step_to_diagonal does not work."
+        # assert meaningfulness of model
+        image = set(mock_step_to_diagonal(X.mock_step))
+        expected_image = set(self.diagonals)
+        assert (
+            image == expected_image
+        ), f"mock_step_to_diagonal fails to reproduce all of diagonals: expected {expected_image}, got {image}."
+
+        return mock_step_to_diagonal
+
 
 def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
     return max(len(str(x)) for x in xx)
-
-
-# TODO: add option to immediately translate hpr results into hdf.
-# from enum import Enum
-# class HPR_version(Enum):
-#     SIMPLE = 1
-#     CYCLE_STEP_AGGREGATE = 2
-#     HPR_TRANSFORM = 3
 
 
 def write_hprs(
@@ -651,6 +728,7 @@ def write_hprs(
 
     if target is None:
         target = source / target_folder_name
+    target = pathlib.Path(target)
 
     result_folders = [
         target
@@ -741,34 +819,12 @@ def write_hprs(
                 MsMsType=0,
             )
     elif hpr_type == "transform":
-        all_frames = hprs.dia_run.opentims.frames["Id"]
-        all_retention_times = hprs.dia_run.opentims.frames["Time"]
-        frame_to_NumScans = dict(
-            zip(all_frames, hprs.dia_run.opentims.frames["NumScans"])
-        )
-        MS1_frames = all_frames[hprs.dia_run.opentims.frames["MsMsType"] == 0]
-        # The idea here is to linearly interpolate within supplied values.
-        diagonal_cycle_to_retention_time_frame_NumScans = {}
-        for diagonal in hprs.diagonals:
-            mock_frames = MS1_frames + 21 * (diagonal - 1) / len(hprs.diagonals)
-            retention_times = np.interp(
-                x=mock_frames,
-                xp=all_frames,
-                fp=all_retention_times,
-                left=-1,  # blind guardian
-                right=-1,  # blind guardian
+        diagonal_cycle_to_retention_time_frame_NumScans = {
+            (diagonal, cycle): (rt, frame, numscan)
+            for diagonal, cycle, rt, frame, mock_frame, numscan in iter_interpolated_retention_time_frame_numscan_tuples(
+                hprs
             )
-            frames = mock_frames.astype(int)
-            frames = frames[retention_times > -1]
-            retention_times = retention_times[retention_times > -1]
-            cycles = hprs.dia_run.frame_to_cycle(frames)
-            for cycle, rt, frame in zip(cycles, retention_times, frames):
-                diagonal_cycle_to_retention_time_frame_NumScans[(diagonal, cycle)] = (
-                    rt,
-                    frame,
-                    frame_to_NumScans[frame],
-                )
-
+        }
         for hpr_idx, cycle, diagonal, data in itertools.islice(
             hprs.iter_hpr_transform(progressbar=verbose),
             _max_iterations,
