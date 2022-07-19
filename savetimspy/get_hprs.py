@@ -673,6 +673,25 @@ class HPRS:
 
         return mock_step_to_diagonal
 
+    @functools.cache  # avoid redoing the assertions but for the first time
+    def get_retention_time_to_mock_frame(self):
+        X = pd.DataFrame(
+            self.iter_interpolated_retention_time_frame_numscan_tuples(),
+            columns=(
+                "diagonal",
+                "cycle",
+                "retention_time",
+                "frame",
+                "mock_frame",
+                "numscan",
+            ),
+        )
+        return scipy.interpolate.interp1d(
+            X.retention_time,
+            X.mock_frame,
+            kind="linear",
+        )
+
 
 def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
     return max(len(str(x)) for x in xx)
