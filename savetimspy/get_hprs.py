@@ -628,7 +628,14 @@ class HPRS:
         op = self.dia_run.opentims
         scans = np.r_[op.min_scan : (op.max_scan + 1)]
         iims = op.scan_to_inv_ion_mobility(scans, 1)
-        _iim2scan = scipy.interpolate.interp1d(iims, scans, kind="linear")
+        coefs = np.polyfit(iims, scans, deg=3)
+        iim_to_scan_extrapolation = (
+            lambda iims: ((coefs[0] * iims + coefs[1]) * iims + coefs[2]) * iims
+            + coefs[3]
+        )
+        iims_new = np.append(np.insert(iims, 0, iims.max() * 1.05), iims.min() * 0.95)
+        scans_new = iim_to_scan_extrapolation(iims_new)
+        _iim2scan = scipy.interpolate.interp1d(iims_new, scans_new, kind="linear")
         iim2scan = lambda iims: np.rint(_iim2scan(iims)).astype(np.uint32)
         # assessing quality of fit
         assert np.all(iim2scan(iims) == scans), "The fitting of iim2scan does not work."
@@ -675,6 +682,7 @@ class HPRS:
 
     @functools.cache  # avoid redoing the assertions but for the first time
     def get_retention_time_to_mock_frame(self):
+        """Interpolate retention-time mock frames."""
         X = pd.DataFrame(
             self.iter_interpolated_retention_time_frame_numscan_tuples(),
             columns=(
@@ -686,11 +694,30 @@ class HPRS:
                 "numscan",
             ),
         )
-        return scipy.interpolate.interp1d(
-            X.retention_time,
-            X.mock_frame,
+        retention_times = X.retention_time.to_numpy()
+        mock_frames = X.mock_frame.to_numpy()
+        # adding 0 as natural extention:
+        # sometimes 4DFF reports retention times slightly below
+        # the values we get in X..
+        retention_times = np.insert(retention_times, 0, 0)
+        mock_frames = np.insert(mock_frames, 0, 0)
+        # I know we could use this directly, but I am a bit afraid of it
+        slope, intercept = np.polyfit(retention_times, mock_frames, deg=1)
+        retention_time_max = retention_times.max() + 2
+        mock_frame_max = intercept + slope * retention_time_max
+        retention_times = np.append(retention_times, retention_time_max)
+        mock_frames = np.append(mock_frames, mock_frame_max)
+        # and this is only 2 times slower, yet totally acceptable
+        retention_time_to_mock_frame = scipy.interpolate.interp1d(
+            retention_times,
+            mock_frames,
             kind="linear",
         )
+        assert np.all(
+            np.abs(retention_time_to_mock_frame(X.retention_time) - X.mock_frame)
+            < 0.001
+        ), "Some values are above tollerance level of 0.001."
+        return retention_time_to_mock_frame
 
 
 def get_max_chars_needed(xx: typing.Iterable[float]) -> int:
