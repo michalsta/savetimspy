@@ -739,7 +739,7 @@ def write_hprs(
     verbose: bool = False,
     _max_iterations: int | None = None,
     _soft_limit: int = 4096,
-) -> list[pathlib.Path]:
+) -> tuple[list[pathlib.Path], HPRS]:
     """
     Arguments:
         HPR_intervals (pd.DataFrame): A data frame with columns 'hpr_start' and 'hpr_stop' describing the beginning and the end of intervals.
@@ -781,15 +781,6 @@ def write_hprs(
         / f"{subfolder_name}_{num2str(hpr.Index, padding_for_ints)}__{num2str(hpr.hpr_start, padding_for_floats)}__{num2str(hpr.hpr_stop, padding_for_floats)}.d"
         for hpr in HPR_intervals.itertuples()
     ]
-    try:
-        print(target)
-        target.mkdir()
-    except FileExistsError:
-        for target_path in result_folders:
-            assert_minimal_input_for_clusterings_exist(target_path)
-        if verbose:
-            print(f"Results were already there: not repeating.")
-        return result_folders
 
     dia_run = DiaRun(
         fromwhat=source,
@@ -804,6 +795,16 @@ def write_hprs(
         window_width=window_width,
         right_quadrupole_buffer=right_quadrupole_buffer,
     )
+
+    try:
+        print(target)
+        target.mkdir()
+    except FileExistsError:
+        for target_path in result_folders:
+            assert_minimal_input_for_clusterings_exist(target_path)
+        if verbose:
+            print(f"Results were already there: not repeating.")
+        return result_folders, hprs
     # highening limits on the number of simultaneously open file handlers on Linux
     soft_limit, hard_limit = get_limits()
     if soft_limit < _soft_limit:
@@ -908,7 +909,7 @@ def write_hprs(
         _Frames = pd.read_sql("SELECT * FROM Frames", sqlite_connection, index_col="Id")
     for saviour in saviours.values():
         saviour.close(_Frames=_Frames)
-    return result_folders
+    return result_folders, hprs
 
 
 def cli():
