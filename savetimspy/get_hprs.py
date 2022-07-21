@@ -559,7 +559,9 @@ class HPRS:
         )  # massive speed-up over repeated construction...
         prev_cycle = -cmath.inf
         for i, (hpr_idx, cycle, step, data) in enumerate(
-            self.iter_hprs(hpr_indices, progressbar)
+            self.iter_hprs(
+                hpr_indices=hpr_indices, progressbar=progressbar, columns=columns
+            )
         ):
             diagonals = self.scan_step_to_diagonal(hpr_idx)[data["scan"], step]
             for diagonal, group_start, group_end in get_group_tags_starts_ends(
